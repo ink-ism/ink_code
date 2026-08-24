@@ -6,6 +6,10 @@ import { indexFile, indexProject, clearCache } from './index-service';
 import { loadSettings, saveSettings, loadRecentProjects, loadSession, saveSession } from './config-service';
 import { decodeBuffer, encodeContent } from './encoding';
 import { listAllFiles, searchProject } from './search-service';
+import {
+  getGitStatus, getGitLog, gitStage, gitUnstage, gitStageAll, gitUnstageAll,
+  gitDiscard, gitCommit, gitPull, gitPush
+} from './git-service';
 
 export function registerIpcHandlers() {
   // 打开目录选择对话框
@@ -159,6 +163,106 @@ export function registerIpcHandlers() {
       return { success: true };
     } catch (error) {
       return { success: false, error: String(error) };
+    }
+  });
+
+  // ============ Git ============
+
+  // 仓库状态（分支、同步、变更文件）
+  ipcMain.handle(IPC_CHANNELS.GIT_STATUS, async (_event, repoPath: string) => {
+    try {
+      return { success: true, status: await getGitStatus(repoPath) };
+    } catch (error) {
+      return { success: false, error: String((error as Error).message ?? error) };
+    }
+  });
+
+  // 最近提交记录
+  ipcMain.handle(IPC_CHANNELS.GIT_LOG, async (_event, repoPath: string) => {
+    try {
+      return { success: true, entries: await getGitLog(repoPath) };
+    } catch (error) {
+      return { success: false, error: String((error as Error).message ?? error) };
+    }
+  });
+
+  // 暂存指定文件
+  ipcMain.handle(IPC_CHANNELS.GIT_STAGE, async (_event, repoPath: string, paths: string[]) => {
+    try {
+      await gitStage(repoPath, paths);
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: String((error as Error).message ?? error) };
+    }
+  });
+
+  // 取消暂存指定文件
+  ipcMain.handle(IPC_CHANNELS.GIT_UNSTAGE, async (_event, repoPath: string, paths: string[]) => {
+    try {
+      await gitUnstage(repoPath, paths);
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: String((error as Error).message ?? error) };
+    }
+  });
+
+  // 暂存全部
+  ipcMain.handle(IPC_CHANNELS.GIT_STAGE_ALL, async (_event, repoPath: string) => {
+    try {
+      await gitStageAll(repoPath);
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: String((error as Error).message ?? error) };
+    }
+  });
+
+  // 取消暂存全部
+  ipcMain.handle(IPC_CHANNELS.GIT_UNSTAGE_ALL, async (_event, repoPath: string) => {
+    try {
+      await gitUnstageAll(repoPath);
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: String((error as Error).message ?? error) };
+    }
+  });
+
+  // 丢弃工作区修改
+  ipcMain.handle(IPC_CHANNELS.GIT_DISCARD, async (_event, repoPath: string, path: string) => {
+    try {
+      await gitDiscard(repoPath, path);
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: String((error as Error).message ?? error) };
+    }
+  });
+
+  // 提交
+  ipcMain.handle(IPC_CHANNELS.GIT_COMMIT, async (_event, repoPath: string, message: string) => {
+    try {
+      await gitCommit(repoPath, message);
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: String((error as Error).message ?? error) };
+    }
+  });
+
+  // 拉取
+  ipcMain.handle(IPC_CHANNELS.GIT_PULL, async (_event, repoPath: string) => {
+    try {
+      const output = await gitPull(repoPath);
+      return { success: true, output };
+    } catch (error) {
+      return { success: false, error: String((error as Error).message ?? error) };
+    }
+  });
+
+  // 推送
+  ipcMain.handle(IPC_CHANNELS.GIT_PUSH, async (_event, repoPath: string) => {
+    try {
+      const output = await gitPush(repoPath);
+      return { success: true, output };
+    } catch (error) {
+      return { success: false, error: String((error as Error).message ?? error) };
     }
   });
 }

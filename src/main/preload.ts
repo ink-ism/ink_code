@@ -18,7 +18,17 @@ const IPC_CHANNELS = {
   CONFIG_SAVE_SESSION: 'config:save-session',
   FILE_LIST_ALL: 'file:list-all',
   SEARCH_PROJECT: 'search:project',
-  SHELL_OPEN_EXTERNAL: 'shell:open-external'
+  SHELL_OPEN_EXTERNAL: 'shell:open-external',
+  GIT_STATUS: 'git:status',
+  GIT_LOG: 'git:log',
+  GIT_STAGE: 'git:stage',
+  GIT_UNSTAGE: 'git:unstage',
+  GIT_STAGE_ALL: 'git:stage-all',
+  GIT_UNSTAGE_ALL: 'git:unstage-all',
+  GIT_DISCARD: 'git:discard',
+  GIT_COMMIT: 'git:commit',
+  GIT_PULL: 'git:pull',
+  GIT_PUSH: 'git:push'
 } as const;
 
 const MAIN_EVENTS = {
@@ -75,5 +85,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
   searchProject: (root: string, query: string) => ipcRenderer.invoke(IPC_CHANNELS.SEARCH_PROJECT, root, query),
 
   // 用系统默认浏览器打开外部链接
-  openExternal: (url: string) => ipcRenderer.invoke(IPC_CHANNELS.SHELL_OPEN_EXTERNAL, url)
+  openExternal: (url: string) => ipcRenderer.invoke(IPC_CHANNELS.SHELL_OPEN_EXTERNAL, url),
+
+  // Git 相关
+  gitStatus: (repoPath: string) => ipcRenderer.invoke(IPC_CHANNELS.GIT_STATUS, repoPath),
+  gitLog: (repoPath: string) => ipcRenderer.invoke(IPC_CHANNELS.GIT_LOG, repoPath),
+  gitStage: (repoPath: string, paths: string[]) => ipcRenderer.invoke(IPC_CHANNELS.GIT_STAGE, repoPath, paths),
+  gitUnstage: (repoPath: string, paths: string[]) => ipcRenderer.invoke(IPC_CHANNELS.GIT_UNSTAGE, repoPath, paths),
+  gitStageAll: (repoPath: string) => ipcRenderer.invoke(IPC_CHANNELS.GIT_STAGE_ALL, repoPath),
+  gitUnstageAll: (repoPath: string) => ipcRenderer.invoke(IPC_CHANNELS.GIT_UNSTAGE_ALL, repoPath),
+  gitDiscard: (repoPath: string, path: string) => ipcRenderer.invoke(IPC_CHANNELS.GIT_DISCARD, repoPath, path),
+  gitCommit: (repoPath: string, message: string) => ipcRenderer.invoke(IPC_CHANNELS.GIT_COMMIT, repoPath, message),
+  gitPull: (repoPath: string) => ipcRenderer.invoke(IPC_CHANNELS.GIT_PULL, repoPath),
+  gitPush: (repoPath: string) => ipcRenderer.invoke(IPC_CHANNELS.GIT_PUSH, repoPath)
 });

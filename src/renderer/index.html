@@ -16,6 +16,12 @@
             <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
           </svg>
         </button>
+        <button class="activity-btn" id="btn-git" title="源代码管理（Git）">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="6" y1="3" x2="6" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/>
+            <path d="M18 9a9 9 0 0 1-9 9"/>
+          </svg>
+        </button>
         <button class="activity-btn active" id="btn-outline" title="大纲">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
             <line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/>
@@ -30,15 +36,30 @@
           </svg>
         </button>
       </div>
-      <!-- 侧边栏 -->
+      <!-- 侧边栏：资源管理器视图 与 Git 视图互斥切换 -->
       <div id="sidebar">
-        <div id="file-tree-container">
-          <div class="panel-header" id="project-name">资源管理器</div>
-          <div id="file-tree"></div>
+        <div class="panel-header" id="project-name">资源管理器</div>
+        <div id="explorer-view">
+          <div id="file-tree-container">
+            <div id="file-tree"></div>
+          </div>
+          <div id="outline-container">
+            <div class="panel-header">大纲</div>
+            <div id="outline-panel"></div>
+          </div>
         </div>
-        <div id="outline-container">
-          <div class="panel-header">大纲</div>
-          <div id="outline-panel"></div>
+        <div id="git-container">
+          <div class="panel-header git-header">
+            <span>Git</span>
+            <span id="git-branch" class="git-branch-badge" hidden></span>
+            <span class="git-header-spacer"></span>
+            <button class="git-icon-btn" id="btn-git-refresh" title="刷新 Git 状态">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/>
+              </svg>
+            </button>
+          </div>
+          <div id="git-panel"></div>
         </div>
       </div>
       <div id="resizer"></div>
@@ -78,7 +99,7 @@
     </div>
     <!-- 状态栏 -->
     <div id="status-bar">
-      <div id="status-left"><span id="status-breadcrumb"></span></div>
+      <div id="status-left"><span id="status-breadcrumb"></span><span class="status-item" id="status-git" hidden></span></div>
       <div id="status-right">
         <span class="status-item" id="status-cursor">Ln 1, Col 1</span>
         <span class="status-item" id="status-lines"></span>
