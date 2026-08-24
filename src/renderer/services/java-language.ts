@@ -1,4 +1,4 @@
-import * as monaco from 'monaco-editor';
+import { monaco } from './monaco';
 import { computeRanges as computeIndentRanges } from 'monaco-editor/esm/vs/editor/contrib/folding/browser/indentRangeProvider';
 
 /**
@@ -7,6 +7,8 @@ import { computeRanges as computeIndentRanges } from 'monaco-editor/esm/vs/edito
  * 注解、类型名、常量、方法调用、Javadoc、文本块、数字字面量等
  */
 export function registerJavaLanguage(): void {
+  // 按需导入下内置 java 贡献不再加载，需显式注册语言 id
+  monaco.languages.register({ id: 'java' });
   monaco.languages.setMonarchTokensProvider('java', {
     defaultToken: '',
     tokenPostfix: '.java',

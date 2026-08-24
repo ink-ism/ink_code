@@ -8,6 +8,7 @@ import { SearchPanel } from './components/SearchPanel';
 import { registerJavaLanguage } from './services/java-language';
 import { registerSqlLanguage } from './services/sql-language';
 import { registerMarkdownLanguage } from './services/markdown-language';
+import { registerJsonLanguage } from './services/json-language';
 import { MarkdownPreview } from './components/MarkdownPreview';
 import { FileTreeNode, FileSymbol, EditorSettings, SessionState, SearchMatch } from '../common/types';
 
@@ -21,7 +22,7 @@ declare global {
       readFile: (filePath: string) => Promise<{ success: boolean; content?: string; encoding?: string; error?: string }>;
       saveFile: (filePath: string, content: string) => Promise<{ success: boolean; error?: string }>;
       indexFile: (filePath: string) => Promise<{ success: boolean; symbols?: FileSymbol[]; error?: string }>;
-      indexProject: (projectPath: string) => Promise<{ success: boolean; symbols?: Array<{ path: string; symbols: FileSymbol[] }>; error?: string }>;
+      indexProject: (projectPath: string) => Promise<{ success: boolean; count?: number; error?: string }>;
       onProjectOpened: (callback: (dirPath: string) => void) => void;
       onOpenSettings: (callback: () => void) => void;
       getSettings: () => Promise<{ success: boolean; settings?: EditorSettings; error?: string }>;
@@ -48,6 +49,9 @@ let searchPanel: SearchPanel | null = null;
 let sessionTimer: number | undefined;
 let markdownPreview: MarkdownPreview | null = null;
 let mdMode: MdMode = 'edit';
+let mdRenderTimer: number | undefined;
+// 大文件保护：超过该大小不创建 TextModel，避免单文件内存爆张
+const MAX_OPEN_FILE_SIZE = 5 * 1024 * 1024;
 // 滚动同步锁：防止编辑器 <-> 预览互相触发形成回环
 let scrollLock: 'editor' | 'preview' | null = null;
 let scrollLockTimer: number | undefined;
@@ -58,6 +62,7 @@ async function init() {
   registerJavaLanguage();
   registerSqlLanguage();
   registerMarkdownLanguage();
+  registerJsonLanguage();
 
   // 加载配置（主题、字体大小）
   let settings: EditorSettings | null = null;
@@ -110,16 +115,19 @@ async function init() {
     return result.success;
   };
 
-  // Markdown 实时预览：内容变化时刷新（非纯编辑模式且为 md 文件时）
-  editorPane.onContentChange = (content: string) => {
+  // 延迟 tab 首次激活：按需加载内容创建 TextModel
+  editorPane.onLoadContent = async (filePath: string) => {
+    const result = await window.electronAPI.readFile(filePath);
+    return result.success && result.content != null ? result.content : null;
+  };
+
+  // Markdown 实时预览：内容变化防抖刷新（非纯编辑模式且为 md 文件时）
+  editorPane.onContentChange = () => {
     if (mdMode === 'edit') return;
     if (editorPane?.getActiveLanguage() !== 'markdown') return;
-    const path = editorPane?.getActivePath();
-    if (path) {
-      markdownPreview?.render(content, path);
-      // 重新渲染后保持预览与编辑器滚动位置对齐
-      if (mdMode === 'split') syncPreviewScrollFromEditor();
-    }
+    // 防抖 200ms：避免每次击键都全量 getValue + 解析 + innerHTML
+    window.clearTimeout(mdRenderTimer);
+    mdRenderTimer = window.setTimeout(() => renderActiveMarkdown(), 200);
   };
 
   // Markdown 预览组件、模式切换与滚动同步
@@ -318,21 +326,22 @@ async function loadProject(dirPath: string, restore?: SessionState) {
       }
     });
 
-    // 后台索引项目
+    // 后台索引项目（主进程侧缓存，仅回传计数）
     window.electronAPI.indexProject(dirPath).then(result => {
       if (result.success) {
-        console.log(`项目索引完成，共 ${result.symbols?.length || 0} 个文件`);
+        console.log(`项目索引完成，共 ${result.count ?? 0} 个文件`);
       }
     });
 
-    // 恢复上次打开的 tab
+    // 恢复上次打开的 tab：仅活动文件立即加载，其余延迟 tab 点击时再加载（降低启动内存）
     if (restore && restore.openFiles.length > 0) {
       for (const f of restore.openFiles) {
-        await openFile(f.path);
+        if (f.path !== restore.activeFile) {
+          editorPane?.addTabDeferred(f.path, f.name);
+        }
       }
-      if (restore.activeFile) {
-        await openFile(restore.activeFile);
-      }
+      const activePath = restore.activeFile ?? restore.openFiles[0].path;
+      await openFile(activePath);
     }
 
     saveSessionDebounced();
@@ -346,6 +355,13 @@ async function openFile(filePath: string) {
   const result = await window.electronAPI.readFile(filePath);
   if (!result.success || !result.content) {
     console.error('读取文件失败:', result.error);
+    return;
+  }
+
+  // 大文件保护：不创建超大 TextModel
+  if (result.content.length > MAX_OPEN_FILE_SIZE) {
+    console.warn('文件过大，未打开:', filePath);
+    alert(`“${filePath.split(/[/\\]/).pop()}” 超过 5MB，暂不打开以避免内存占用过高。`);
     return;
   }
 

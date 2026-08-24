@@ -1,4 +1,4 @@
-import * as monaco from 'monaco-editor';
+import { monaco } from './monaco';
 
 /**
  * 增强版 Markdown 语法高亮
@@ -7,6 +7,8 @@ import * as monaco from 'monaco-editor';
  * Markdown 为按行解析语言，围栏代码块通过状态机跨行保持。
  */
 export function registerMarkdownLanguage(): void {
+  // 按需导入下内置 markdown 贡献不再加载，需显式注册语言 id
+  monaco.languages.register({ id: 'markdown' });
   monaco.languages.setMonarchTokensProvider('markdown', {
     defaultToken: '',
     tokenPostfix: '.markdown',

@@ -66,12 +66,8 @@ export function registerIpcHandlers() {
   ipcMain.handle(IPC_CHANNELS.INDEX_PROJECT, async (_event, projectPath: string) => {
     try {
       const result = await indexProject(projectPath);
-      // 将 Map 转换为数组以便 IPC 传输
-      const symbolsArray = Array.from(result.entries()).map(([path, symbols]) => ({
-        path,
-        symbols
-      }));
-      return { success: true, symbols: symbolsArray };
+      // 仅回传计数，全量符号不再经 IPC 传输（渲染进程只用于日志）
+      return { success: true, count: result.size };
     } catch (error) {
       return { success: false, error: String(error) };
     }

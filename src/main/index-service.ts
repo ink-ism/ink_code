@@ -3,16 +3,36 @@ import { readdir } from 'fs/promises';
 import { join } from 'path';
 import { FileSymbol } from '../common/types';
 
-// 符号索引缓存
+// 符号索引缓存（LRU 上限，防止随项目规模无限增长）
+const MAX_CACHED_FILES = 1500;
 const symbolCache = new Map<string, FileSymbol[]>();
+
+function cacheGet(filePath: string): FileSymbol[] | undefined {
+  const hit = symbolCache.get(filePath);
+  if (hit) {
+    // 移到 LRU 尾部
+    symbolCache.delete(filePath);
+    symbolCache.set(filePath, hit);
+  }
+  return hit;
+}
+
+function cacheSet(filePath: string, symbols: FileSymbol[]): void {
+  symbolCache.set(filePath, symbols);
+  if (symbolCache.size > MAX_CACHED_FILES) {
+    const oldest = symbolCache.keys().next().value;
+    if (oldest !== undefined) symbolCache.delete(oldest);
+  }
+}
 
 /**
  * 索引单个 Java 文件，提取符号信息
  */
 export function indexFile(filePath: string): FileSymbol[] {
   // 检查缓存
-  if (symbolCache.has(filePath)) {
-    return symbolCache.get(filePath)!;
+  const cached = cacheGet(filePath);
+  if (cached) {
+    return cached;
   }
 
   const symbols: FileSymbol[] = [];
@@ -128,7 +148,7 @@ export function indexFile(filePath: string): FileSymbol[] {
   }
 
   // 缓存结果
-  symbolCache.set(filePath, symbols);
+  cacheSet(filePath, symbols);
   return symbols;
 }
 
@@ -147,6 +167,8 @@ export function clearCache(filePath?: string) {
  * 索引整个项目（递归扫描所有 .java 文件）
  */
 export async function indexProject(projectPath: string): Promise<Map<string, FileSymbol[]>> {
+  // 切换项目时旧项目缓存不再有用，直接清空释放主进程内存
+  symbolCache.clear();
   const result = new Map<string, FileSymbol[]>();
   
   async function scan(dir: string) {
