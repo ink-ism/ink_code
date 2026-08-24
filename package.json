@@ -1,0 +1,70 @@
+{
+  "name": "ink-java-editor",
+  "version": "0.2.0",
+  "description": "Java code editor based on Electron + Monaco Editor",
+  "main": "dist/main/main/index.js",
+  "scripts": {
+    "dev": "vite",
+    "build:main": "tsc -p tsconfig.main.json",
+    "build:renderer": "vite build",
+    "build": "npm run build:main && npm run build:renderer",
+    "preview": "vite preview",
+    "electron:dev": "npm run build:main && concurrently \"vite\" \"wait-on http://localhost:5173 && electron . --dev\"",
+    "icon": "node scripts/gen-icon.js",
+    "electron:build": "npm run build && electron-builder"
+  },
+  "dependencies": {
+    "iconv-lite": "^0.7.3",
+    "marked": "^18.0.10",
+    "monaco-editor": "^0.45.0",
+    "split.js": "^1.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "concurrently": "^8.2.2",
+    "electron": "^28.1.0",
+    "electron-builder": "^24.9.1",
+    "typescript": "^5.3.3",
+    "vite": "^5.0.10",
+    "vite-plugin-monaco-editor": "^1.1.0",
+    "wait-on": "^7.2.0"
+  },
+  "build": {
+    "appId": "com.ink.java-editor",
+    "productName": "Ink Java Editor",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**/*",
+      "build/icon.ico",
+      "node_modules/iconv-lite/**",
+      "node_modules/safer-buffer/**"
+    ],
+    "win": {
+      "icon": "build/icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Ink Java Editor"
+    }
+  }
+}
