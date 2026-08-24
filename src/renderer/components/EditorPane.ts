@@ -1,11 +1,11 @@
-import * as monaco from 'monaco-editor';
+import { monaco } from '../services/monaco';
 import { fileIconSvg } from '../services/icons';
 import { findImportBlock } from '../services/java-language';
 
 interface OpenFile {
   path: string;
   name: string;
-  model: monaco.editor.ITextModel;
+  model: monaco.editor.ITextModel | null; // 懒创建：延迟 tab 首次激活前为 null；关闭时立即 dispose 防泄漏
   dirty: boolean;
   viewState: monaco.editor.ICodeEditorViewState | null;
 }
@@ -21,8 +21,10 @@ export class EditorPane {
   public onCursorChange?: (line: number, column: number) => void;
   public onTabsChange?: () => void;
   public onAllClosed?: () => void;
-  // 活动文件内容变化（用于 Markdown 实时预览）
-  public onContentChange?: (content: string) => void;
+  // 活动文件内容变化（用于 Markdown 实时预览；回调侧按需拉取内容，避免每键全量拷贝）
+  public onContentChange?: () => void;
+  // 延迟 tab 首次激活时按需加载内容创建 TextModel
+  public onLoadContent?: (path: string) => Promise<string | null>;
   // 编辑器滚动事件（用于双栏预览滚动同步）
   public onDidScroll?: (info: { scrollTop: number; scrollHeight: number; height: number }) => void;
 
@@ -48,8 +50,8 @@ export class EditorPane {
     // 监听内容变化（标记未保存）
     this.editor.onDidChangeModelContent(() => {
       this.markFileDirty();
-      // 通知活动文件内容变更（预览等场景）
-      this.onContentChange?.(this.editor.getModel()?.getValue() ?? '');
+      // 通知活动文件内容变更（预览侧按需拉取并防抖渲染）
+      this.onContentChange?.();
     });
 
     // 监听光标位置（状态栏显示）
@@ -68,10 +70,14 @@ export class EditorPane {
   }
 
   openFile(path: string, name: string, content: string) {
-    // 检查是否已打开
+    // 检查是否已打开（含延迟 tab：就地补充内容实例化）
     const existingIndex = this.openFiles.findIndex(f => f.path === path);
     if (existingIndex >= 0) {
-      this.activateTab(existingIndex);
+      const existing = this.openFiles[existingIndex];
+      if (!existing.model) {
+        existing.model = monaco.editor.createModel(content, this.getLanguage(name));
+      }
+      void this.activateTab(existingIndex);
       return;
     }
 
@@ -81,7 +87,25 @@ export class EditorPane {
     
     this.openFiles.push({ path, name, model, dirty: false, viewState: null });
     this.renderTabs();
-    this.activateTab(this.openFiles.length - 1);
+    void this.activateTab(this.openFiles.length - 1);
+  }
+
+  // 延迟 tab：仅登记元数据，不创建 TextModel（会话恢复用，点击时再加载）
+  addTabDeferred(path: string, name: string) {
+    if (this.openFiles.some(f => f.path === path)) return;
+    this.openFiles.push({ path, name, model: null, dirty: false, viewState: null });
+    this.renderTabs();
+  }
+
+  // 按需加载内容并创建 TextModel，失败返回 null
+  private async ensureModel(file: OpenFile): Promise<monaco.editor.ITextModel | null> {
+    if (file.model) return file.model;
+    const content = await this.onLoadContent?.(file.path);
+    if (content == null) return null;
+    if (!file.model) {
+      file.model = monaco.editor.createModel(content, this.getLanguage(file.name));
+    }
+    return file.model;
   }
 
   // 保存当前显示 model 对应 tab 的视图状态（光标/滚动/折叠）
@@ -94,12 +118,16 @@ export class EditorPane {
     }
   }
 
-  private activateTab(index: number) {
+  private async activateTab(index: number) {
     this.saveCurrentViewState();
     this.activeFileIndex = index;
     const file = this.openFiles[index];
 
-    this.editor.setModel(file.model);
+    const model = await this.ensureModel(file);
+    // await 期间用户可能切走/关 tab，仅当仍是活动项时才挂载
+    if (!model || this.openFiles[this.activeFileIndex] !== file) return;
+
+    this.editor.setModel(model);
     if (file.viewState) {
       // 恢复折叠/滚动/光标状态
       this.editor.restoreViewState(file.viewState);
@@ -113,7 +141,7 @@ export class EditorPane {
 
   // 自动折叠 import 块（延迟等待折叠范围计算完成）
   private autoFoldImports(file: OpenFile) {
-    if (this.getLanguage(file.name) !== 'java') return;
+    if (this.getLanguage(file.name) !== 'java' || !file.model) return;
     const block = findImportBlock(file.model);
     if (!block) return;
     setTimeout(() => {
@@ -125,7 +153,7 @@ export class EditorPane {
     }, 120);
   }
 
-  closeTab(index: number, event?: Event) {
+  async closeTab(index: number, event?: Event) {
     if (event) {
       event.stopPropagation();
     }
@@ -145,11 +173,18 @@ export class EditorPane {
     } else if (index <= this.activeFileIndex) {
       this.activeFileIndex = Math.max(0, this.activeFileIndex - 1);
       const next = this.openFiles[this.activeFileIndex];
-      this.editor.setModel(next.model);
-      if (next.viewState) {
-        this.editor.restoreViewState(next.viewState);
+      const model = await this.ensureModel(next);
+      // await 后目标 tab 仍是活动项才挂载
+      if (model && this.openFiles[this.activeFileIndex] === next) {
+        this.editor.setModel(model);
+        if (next.viewState) {
+          this.editor.restoreViewState(next.viewState);
+        }
       }
     }
+
+    // 编辑器已卸载旧 model 后释放 TextModel，避免开关 tab 泄漏累积
+    file.model?.dispose();
 
     this.renderTabs();
     if (this.activeFileIndex >= 0) {
@@ -163,6 +198,7 @@ export class EditorPane {
     if (this.activeFileIndex < 0) return;
     
     const file = this.openFiles[this.activeFileIndex];
+    if (!file.model) return;
     const content = file.model.getValue();
     
     if (this.onSave) {
@@ -227,7 +263,7 @@ export class EditorPane {
       path: file.path,
       name: file.name,
       language: this.getLanguage(file.name),
-      content: file.model.getValue()
+      content: file.model?.getValue() ?? ''
     };
   }
 
@@ -278,10 +314,10 @@ export class EditorPane {
       const closeBtn = document.createElement('span');
       closeBtn.className = 'tab-close';
       closeBtn.textContent = '×';
-      closeBtn.addEventListener('click', (e) => this.closeTab(index, e));
+      closeBtn.addEventListener('click', (e) => { void this.closeTab(index, e); });
       tab.appendChild(closeBtn);
 
-      tab.addEventListener('click', () => this.activateTab(index));
+      tab.addEventListener('click', () => { void this.activateTab(index); });
       this.tabBar.appendChild(tab);
     });
   }

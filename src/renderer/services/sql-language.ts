@@ -1,4 +1,4 @@
-import * as monaco from 'monaco-editor';
+import { monaco } from './monaco';
 
 /**
  * 增强版 SQL 语法高亮（面向 MySQL/PostgreSQL 常见 DDL/DML）
@@ -11,6 +11,8 @@ import * as monaco from 'monaco-editor';
  * SQL 不区分大小写，通过 ignoreCase 统一处理。
  */
 export function registerSqlLanguage(): void {
+  // 按需导入下内置 sql 贡献不再加载，需显式注册语言 id
+  monaco.languages.register({ id: 'sql' });
   monaco.languages.setMonarchTokensProvider('sql', {
     defaultToken: '',
     tokenPostfix: '.sql',
