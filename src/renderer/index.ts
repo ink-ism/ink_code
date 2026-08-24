@@ -10,7 +10,8 @@ import { registerSqlLanguage } from './services/sql-language';
 import { registerMarkdownLanguage } from './services/markdown-language';
 import { registerJsonLanguage } from './services/json-language';
 import { MarkdownPreview } from './components/MarkdownPreview';
-import { FileTreeNode, FileSymbol, EditorSettings, SessionState, SearchMatch } from '../common/types';
+import { GitPanel } from './components/GitPanel';
+import { FileTreeNode, FileSymbol, EditorSettings, SessionState, SearchMatch, GitStatusInfo, GitLogEntry } from '../common/types';
 
 // 类型声明
 declare global {
@@ -34,6 +35,16 @@ declare global {
       listAllFiles: (root: string) => Promise<{ success: boolean; files?: string[]; error?: string }>;
       searchProject: (root: string, query: string) => Promise<{ success: boolean; matches?: SearchMatch[]; error?: string }>;
       openExternal: (url: string) => Promise<{ success: boolean; error?: string }>;
+      gitStatus: (repoPath: string) => Promise<{ success: boolean; status?: GitStatusInfo; error?: string }>;
+      gitLog: (repoPath: string) => Promise<{ success: boolean; entries?: GitLogEntry[]; error?: string }>;
+      gitStage: (repoPath: string, paths: string[]) => Promise<{ success: boolean; error?: string }>;
+      gitUnstage: (repoPath: string, paths: string[]) => Promise<{ success: boolean; error?: string }>;
+      gitStageAll: (repoPath: string) => Promise<{ success: boolean; error?: string }>;
+      gitUnstageAll: (repoPath: string) => Promise<{ success: boolean; error?: string }>;
+      gitDiscard: (repoPath: string, path: string) => Promise<{ success: boolean; error?: string }>;
+      gitCommit: (repoPath: string, message: string) => Promise<{ success: boolean; error?: string }>;
+      gitPull: (repoPath: string) => Promise<{ success: boolean; error?: string }>;
+      gitPush: (repoPath: string) => Promise<{ success: boolean; error?: string }>;
     };
   }
 }
@@ -48,6 +59,7 @@ let quickOpen: QuickOpen | null = null;
 let searchPanel: SearchPanel | null = null;
 let sessionTimer: number | undefined;
 let markdownPreview: MarkdownPreview | null = null;
+let gitPanel: GitPanel | null = null;
 let mdMode: MdMode = 'edit';
 let mdRenderTimer: number | undefined;
 // 大文件保护：超过该大小不创建 TextModel，避免单文件内存爆张
@@ -111,6 +123,8 @@ async function init() {
     if (result.success) {
       // 保存成功后重新索引
       await updateOutline(filePath);
+      // 文件落盘后刷新 Git 状态（工作区变更可能变化）
+      gitPanel?.refresh();
     }
     return result.success;
   };
@@ -145,6 +159,23 @@ async function init() {
   outlinePanel.onSymbolClick = (line: number) => {
     editorPane?.goToLine(line);
   };
+
+  // 初始化 Git 面板：点击变更文件在编辑器打开，状态变化同步到状态栏
+  gitPanel = new GitPanel(
+    document.getElementById('git-panel')!,
+    document.getElementById('git-branch')!,
+    {
+      onOpenFile: (relPath) => {
+        if (currentProjectPath) {
+          openFile(joinPath(currentProjectPath, relPath));
+        }
+      },
+      onStatusUpdate: (status) => updateGitStatusBar(status)
+    }
+  );
+  document.getElementById('btn-git-refresh')!.addEventListener('click', () => {
+    gitPanel?.refresh();
+  });
 
   // 监听菜单栏 Project -> 打开项目 事件
   window.electronAPI.onProjectOpened((dirPath) => {
@@ -248,18 +279,49 @@ function initResizer() {
   });
 }
 
+// 侧边栏视图：资源管理器 与 Git 互斥切换
+type SidebarView = 'explorer' | 'git';
+let currentSidebarView: SidebarView = 'explorer';
+
+// 切换到指定视图（同时确保侧边栏可见，并同步活动栏高亮）
+function switchSidebarView(view: SidebarView) {
+  const explorerView = document.getElementById('explorer-view')!;
+  const gitContainer = document.getElementById('git-container')!;
+  currentSidebarView = view;
+  explorerView.style.display = view === 'explorer' ? 'flex' : 'none';
+  gitContainer.style.display = view === 'git' ? 'flex' : 'none';
+  document.getElementById('sidebar')!.style.display = 'flex';
+  document.getElementById('resizer')!.style.display = 'block';
+  document.getElementById('btn-explorer')!.classList.toggle('active', view === 'explorer');
+  document.getElementById('btn-git')!.classList.toggle('active', view === 'git');
+  if (view === 'git') {
+    gitPanel?.refresh();
+  }
+}
+
+// 活动栏按钮：点击当前视图时收起侧边栏，否则切换到对应视图
+function toggleSidebarView(view: SidebarView) {
+  const sidebar = document.getElementById('sidebar')!;
+  if (sidebar.style.display !== 'none' && currentSidebarView === view) {
+    sidebar.style.display = 'none';
+    document.getElementById('resizer')!.style.display = 'none';
+    document.getElementById('btn-explorer')!.classList.remove('active');
+    document.getElementById('btn-git')!.classList.remove('active');
+    return;
+  }
+  switchSidebarView(view);
+}
+
 // 活动栏按钮交互
 function initActivityBar() {
-  const sidebar = document.getElementById('sidebar')!;
-  const resizer = document.getElementById('resizer')!;
   const outlineContainer = document.getElementById('outline-container')!;
 
-  document.getElementById('btn-explorer')!.addEventListener('click', (e) => {
-    const btn = e.currentTarget as HTMLElement;
-    const show = sidebar.style.display === 'none';
-    sidebar.style.display = show ? 'flex' : 'none';
-    resizer.style.display = show ? 'block' : 'none';
-    btn.classList.toggle('active', show);
+  document.getElementById('btn-explorer')!.addEventListener('click', () => {
+    toggleSidebarView('explorer');
+  });
+
+  document.getElementById('btn-git')!.addEventListener('click', () => {
+    toggleSidebarView('git');
   });
 
   document.getElementById('btn-outline')!.addEventListener('click', (e) => {
@@ -313,6 +375,10 @@ async function loadProject(dirPath: string, restore?: SessionState) {
   // 项目名显示在侧边栏标题位置
   document.getElementById('project-name')!.textContent = dirPath.split(/[/\\]/).pop() || dirPath;
   updateBreadcrumb(null);
+
+  // 切换项目后刷新 Git 面板（分支、变更、提交记录）
+  gitPanel?.setProject(dirPath);
+  gitPanel?.refresh();
 
   try {
     // 加载文件树
@@ -487,6 +553,21 @@ function updateLineCount() {
   const el = document.getElementById('status-lines')!;
   const count = editorPane?.getLineCount() ?? 0;
   el.textContent = count > 0 ? `${count} 行` : '';
+}
+
+// 状态栏 Git 分支信息
+function updateGitStatusBar(status: GitStatusInfo | null) {
+  const el = document.getElementById('status-git')!;
+  if (!status || !status.isRepo) {
+    el.hidden = true;
+    el.textContent = '';
+    return;
+  }
+  let text = `⎇ ${status.branch}`;
+  const dirty = status.staged.length + status.changes.length + status.untracked.length;
+  if (dirty > 0) text += ` · ${dirty} 变更`;
+  el.textContent = text;
+  el.hidden = false;
 }
 
 // 路径拼接（项目根 + 相对路径）
