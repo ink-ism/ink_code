@@ -1,7 +1,7 @@
 {
-  "name": "ink-java-editor",
-  "version": "0.2.0",
-  "description": "Java code editor based on Electron + Monaco Editor",
+  "name": "inkcode",
+  "version": "1.0.0",
+  "description": "Code editor based on Electron + Monaco Editor",
   "main": "dist/main/main/index.js",
   "scripts": {
     "dev": "vite",
@@ -31,7 +31,7 @@
   },
   "build": {
     "appId": "com.ink.java-editor",
-    "productName": "Ink Java Editor",
+    "productName": "InkCode",
     "directories": {
       "output": "release",
       "buildResources": "build"
@@ -64,7 +64,7 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Ink Java Editor"
+      "shortcutName": "InkCode"
     }
   }
 }

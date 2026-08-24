@@ -40,12 +40,12 @@ async function showAbout() {
   await dialog.showMessageBox(win, {
     type: 'info',
     title: '关于',
-    message: 'Ink Java Editor',
+    message: 'InkCode',
     detail: [
       `版本：${app.getVersion()}`,
       '',
-      '基于 Electron + Monaco Editor 的 Java 代码编辑器',
-      '支持文件树浏览、符号大纲、快速打开、全局搜索、',
+      '基于 Electron + Monaco Editor 的代码编辑器',
+      '支持文件树浏览、符号大纲、快速打开、全局搜索、Git 操作、',
       'GBK/UTF-8 编码自动识别与会话恢复。'
     ].join('\n'),
     buttons: ['确定']
