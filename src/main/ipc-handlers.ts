@@ -1,9 +1,10 @@
-import { ipcMain, dialog, shell } from 'electron';
+import { ipcMain, dialog, shell, nativeTheme, BrowserWindow } from 'electron';
 import { readFile, writeFile } from 'fs/promises';
-import { IPC_CHANNELS } from '../common/types';
+import { IPC_CHANNELS, isLightTheme } from '../common/types';
 import { scanDirectory, scanFullTree } from './file-service';
 import { indexFile, indexProject, clearCache } from './index-service';
 import { loadSettings, saveSettings, loadRecentProjects, loadSession, saveSession } from './config-service';
+import { getMenuModel, invokeMenuAction, applyTitleBarOverlay } from './menu-service';
 import { decodeBuffer, encodeContent } from './encoding';
 import { listAllFiles, searchProject } from './search-service';
 import {
@@ -90,10 +91,27 @@ export function registerIpcHandlers() {
   ipcMain.handle(IPC_CHANNELS.CONFIG_SAVE_SETTINGS, async (_event, settings) => {
     try {
       await saveSettings(settings);
+      // 原生窗口按钮 / 对话框配色随主题即时同步
+      nativeTheme.themeSource = isLightTheme(settings.theme) ? 'light' : 'dark';
+      const light = isLightTheme(settings.theme);
+      for (const win of BrowserWindow.getAllWindows()) {
+        applyTitleBarOverlay(win, light);
+      }
       return { success: true };
     } catch (error) {
       return { success: false, error: String(error) };
     }
+  });
+
+  // HTML 菜单栏：拉取菜单模型
+  ipcMain.handle(IPC_CHANNELS.MENU_GET_TEMPLATE, () => {
+    return getMenuModel();
+  });
+
+  // HTML 菜单栏：执行菜单项动作
+  ipcMain.handle(IPC_CHANNELS.MENU_INVOKE, (_event, id: string) => {
+    invokeMenuAction(id);
+    return { success: true };
   });
 
   // 读取最近项目

@@ -1,6 +1,6 @@
 {
   "name": "inkcode",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Code editor based on Electron + Monaco Editor",
   "main": "dist/main/main/index.js",
   "scripts": {
@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "iconv-lite": "^0.7.3",
+    "koffi": "^3.1.6",
     "marked": "^18.0.10",
     "monaco-editor": "^0.45.0",
     "split.js": "^1.6.5"
