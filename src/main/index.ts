@@ -1,148 +1,30 @@
-import { app, BrowserWindow, Menu, dialog, shell } from 'electron';
+import { app, BrowserWindow, shell, nativeTheme } from 'electron';
 import { join } from 'path';
 import { registerIpcHandlers } from './ipc-handlers';
-import { loadRecentProjects, addRecentProject } from './config-service';
-import { MAIN_EVENTS } from '../common/types';
+import { loadSettings } from './config-service';
+import { isLightTheme } from '../common/types';
+import { createMenu, titleBarOverlayOptions } from './menu-service';
 
 let mainWindow: BrowserWindow | null = null;
 
+// 窗口底色：随保存的主题同步（浅色主题用白底，避免启动闪黑）
+let windowBg = '#17171a';
+
+// 当前主题是否浅色（决定 titleBarOverlay 配色）
+let lightTheme = false;
+
 // 检测是否在开发模式（通过命令行参数或环境变量）
 const isDev = process.argv.includes('--dev') || process.env.NODE_ENV === 'development';
-
-// 获取当前窗口
-function getWin(): BrowserWindow | null {
-  return BrowserWindow.getFocusedWindow() || mainWindow;
-}
-
-// 打开项目对话框，选择后记录最近项目并通知渲染进程
-async function openProjectDialog() {
-  console.log('[menu] 打开项目 clicked');
-  const win = getWin();
-  if (!win) return;
-  const result = await dialog.showOpenDialog(win, {
-    properties: ['openDirectory']
-  });
-  if (!result.canceled && result.filePaths[0]) {
-    const dirPath = result.filePaths[0];
-    const name = dirPath.split(/[/\\]/).pop() || dirPath;
-    await addRecentProject(dirPath, name);
-    await createMenu(); // 重建菜单以更新最近项目列表
-    win.webContents.send(MAIN_EVENTS.PROJECT_OPENED, dirPath);
-  }
-}
-
-/**
- * 关于对话框：展示应用名称、版本、技术栈
- */
-async function showAbout() {
-  const win = getWin();
-  if (!win) return;
-  await dialog.showMessageBox(win, {
-    type: 'info',
-    title: '关于',
-    message: 'InkCode',
-    detail: [
-      `版本：${app.getVersion()}`,
-      '',
-      '基于 Electron + Monaco Editor 的代码编辑器',
-      '支持文件树浏览、符号大纲、快速打开、全局搜索、Git 操作、',
-      'GBK/UTF-8 编码自动识别与会话恢复。'
-    ].join('\n'),
-    buttons: ['确定']
-  });
-}
-
-/**
- * 创建应用菜单栏
- * 文件菜单含设置页，Project 菜单含打开项目和最近项目
- */
-async function createMenu() {
-  const recentProjects = await loadRecentProjects();
-
-  const recentSubmenu: Electron.MenuItemConstructorOptions[] = recentProjects.length > 0
-    ? recentProjects.map(p => ({
-        label: p.name,
-        click: () => {
-          const win = getWin();
-          if (win) win.webContents.send(MAIN_EVENTS.PROJECT_OPENED, p.path);
-        }
-      }))
-    : [{ label: '（无）', enabled: false }];
-
-  const template: Electron.MenuItemConstructorOptions[] = [
-    {
-      label: '文件',
-      submenu: [
-        {
-          label: '设置',
-          accelerator: 'CmdOrCtrl+,',
-          click: () => {
-            console.log('[menu] 设置 clicked');
-            const win = getWin();
-            console.log('[menu] win:', !!win);
-            if (win) win.webContents.send(MAIN_EVENTS.OPEN_SETTINGS);
-          }
-        },
-        { type: 'separator' },
-        { role: 'quit', label: '退出' }
-      ]
-    },
-    {
-      label: '编辑',
-      submenu: [
-        { role: 'undo', label: '撤销' },
-        { role: 'redo', label: '重做' },
-        { type: 'separator' },
-        { role: 'cut', label: '剪切' },
-        { role: 'copy', label: '复制' },
-        { role: 'paste', label: '粘贴' },
-        { role: 'selectAll', label: '全选' }
-      ]
-    },
-    {
-      label: 'Project',
-      submenu: [
-        { label: '打开项目', accelerator: 'CmdOrCtrl+O', click: () => openProjectDialog() },
-        { type: 'separator' },
-        { label: '最近项目', submenu: recentSubmenu }
-      ]
-    },
-    {
-      label: '视图',
-      submenu: [
-        { role: 'reload', label: '重新加载' },
-        { type: 'separator' },
-        { role: 'resetZoom', label: '重置缩放' },
-        { role: 'zoomIn', label: '放大' },
-        { role: 'zoomOut', label: '缩小' },
-        { type: 'separator' },
-        { role: 'togglefullscreen', label: '全屏' }
-      ]
-    },
-    {
-      label: '窗口',
-      submenu: [
-        { role: 'minimize', label: '最小化' },
-        { role: 'close', label: '关闭' }
-      ]
-    },
-    {
-      label: '帮助',
-      submenu: [
-        { label: '关于', click: () => showAbout() }
-      ]
-    }
-  ];
-
-  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
-}
 
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
-    backgroundColor: '#17171a',
+    backgroundColor: windowBg,
     icon: join(__dirname, '../../../build/icon.ico'),
+    // 隐藏原生标题栏，顶部区域由 HTML 自绘；右上角保留原生窗口按钮（overlay）
+    titleBarStyle: 'hidden',
+    titleBarOverlay: titleBarOverlayOptions(lightTheme),
     webPreferences: {
       preload: join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -187,6 +69,11 @@ function createWindow() {
 app.whenReady().then(async () => {
   registerIpcHandlers();
   await createMenu();
+  // 创建窗口前读取配置，窗口底色 / 标题栏按钮配色与主题保持一致
+  const startupSettings = await loadSettings();
+  lightTheme = isLightTheme(startupSettings.theme);
+  windowBg = lightTheme ? '#ffffff' : '#17171a';
+  nativeTheme.themeSource = lightTheme ? 'light' : 'dark';
   createWindow();
 
   app.on('activate', () => {

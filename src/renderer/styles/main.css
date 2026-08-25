@@ -18,10 +18,70 @@
   --text-faint: #5b5b64;
   --accent: #5b9dff;
   --accent-dim: rgba(91, 157, 255, 0.16);
+  --on-accent: #0e1524;       /* 强调色上的文字 */
+  --scrollbar-thumb: #33333a;
+  --scrollbar-thumb-hover: #44444c;
+  --md-code-inline: #ce9178;  /* Markdown 行内代码 */
+  --md-code-block: #1c1c20;   /* Markdown 代码块底色 */
+  --zebra: rgba(255, 255, 255, 0.02); /* 表格斑马纹 */
+  --dialog-bg: #2d2d30;       /* 弹窗底色（快速打开 / 全局搜索） */
+  --dialog-border: #454545;
+  --dialog-input: #3c3c3c;
+  --dialog-text: #e0e0e0;
+  --dialog-muted: #808080;
+  --dialog-group-bg: #252526;
+  --dialog-group-text: #bbbbbb;
+  --dialog-highlight: #094778;         /* 选中/悬停行底色 */
+  --dialog-on-highlight: #e0e0e0;      /* 高亮底色上的文字 */
+  --dialog-on-highlight-muted: #808080;
+  --git-mod: #e0b45c;
+  --git-add: #57c278;
+  --git-del: #f1737b;
+  --danger: #f1737b;
   --radius-s: 4px;
   --radius-m: 8px;
   --radius-l: 12px;
   --font-ui: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+}
+
+/* ============================================================
+   浅色主题：编辑器使用浅色配色时同步覆盖变量，外壳与编辑器保持一致
+   ============================================================ */
+:root[data-theme='light'] {
+  --bg-base: #ffffff;
+  --bg-bar: #ececf0;
+  --bg-panel: #f5f5f8;
+  --bg-elevated: #ffffff;
+  --bg-hover: #e7e7ec;
+  --bg-active: #d6e1f3;
+  --border: #e0e0e5;
+  --border-strong: #c4c4cd;
+  --text: #3b3b42;
+  --text-bright: #17171b;
+  --text-muted: #67676f;
+  --text-faint: #97979f;
+  --accent: #0066bf;
+  --accent-dim: rgba(0, 102, 191, 0.14);
+  --on-accent: #ffffff;
+  --scrollbar-thumb: #c7c7cf;
+  --scrollbar-thumb-hover: #ababb5;
+  --md-code-inline: #a31515;
+  --md-code-block: #f3f3f6;
+  --zebra: rgba(0, 0, 0, 0.03);
+  --dialog-bg: #ffffff;
+  --dialog-border: #c9c9d2;
+  --dialog-input: #ffffff;
+  --dialog-text: #33333a;
+  --dialog-muted: #77777f;
+  --dialog-group-bg: #ededf1;
+  --dialog-group-text: #55555d;
+  --dialog-highlight: #0060c0;
+  --dialog-on-highlight: #ffffff;
+  --dialog-on-highlight-muted: #cfd9ea;
+  --git-mod: #96740f;
+  --git-add: #1a7f37;
+  --git-del: #d1242f;
+  --danger: #d1242f;
 }
 
 * {
@@ -591,7 +651,7 @@ body.resizing {
   padding: 2px 5px;
   border-radius: var(--radius-s);
   background-color: var(--bg-active);
-  color: #ce9178;
+  color: var(--md-code-inline);
   font-family: Consolas, 'Courier New', monospace;
   font-size: 0.88em;
 }
@@ -601,7 +661,7 @@ body.resizing {
   margin: 12px 0;
   padding: 12px 14px;
   border-radius: var(--radius-m);
-  background-color: #1c1c20;
+  background-color: var(--md-code-block);
   border: 1px solid var(--border);
   overflow-x: auto;
 }
@@ -672,7 +732,7 @@ body.resizing {
 }
 
 .markdown-body tr:nth-child(2n) td {
-  background-color: rgba(255, 255, 255, 0.02);
+  background-color: var(--zebra);
 }
 
 /* 图片 */
@@ -915,7 +975,7 @@ body.resizing {
 .settings-btn-primary {
   padding: 6px 18px;
   background-color: var(--accent);
-  color: #0e1524;
+  color: var(--on-accent);
   border: none;
   border-radius: 6px;
   cursor: pointer;
@@ -954,21 +1014,21 @@ body.resizing {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #33333a;
+  background: var(--scrollbar-thumb);
   border-radius: 8px;
   border: 2px solid transparent;
   background-clip: padding-box;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #44444c;
+  background: var(--scrollbar-thumb-hover);
   border: 2px solid transparent;
   background-clip: padding-box;
 }
 
 /* 未保存标记 */
 .tab-dirty {
-  color: #e0e0e0;
+  color: var(--text-bright);
   font-size: 10px;
   margin-left: 2px;
 }
@@ -992,8 +1052,8 @@ body.resizing {
 .quickopen-dialog {
   width: 560px;
   max-width: 90vw;
-  background-color: #2d2d30;
-  border: 1px solid #454545;
+  background-color: var(--dialog-bg);
+  border: 1px solid var(--dialog-border);
   border-radius: 6px;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
   overflow: hidden;
@@ -1002,10 +1062,10 @@ body.resizing {
 .quickopen-input {
   width: 100%;
   padding: 10px 14px;
-  background-color: #3c3c3c;
+  background-color: var(--dialog-input);
   border: none;
-  border-bottom: 1px solid #454545;
-  color: #e0e0e0;
+  border-bottom: 1px solid var(--dialog-border);
+  color: var(--dialog-text);
   font-size: 13px;
   outline: none;
 }
@@ -1025,21 +1085,31 @@ body.resizing {
 
 .quickopen-item.selected,
 .quickopen-item:hover {
-  background-color: #094778;
+  background-color: var(--dialog-highlight);
 }
 
 .quickopen-item-name {
-  color: #e0e0e0;
+  color: var(--dialog-text);
   font-size: 13px;
   white-space: nowrap;
 }
 
+.quickopen-item.selected .quickopen-item-name,
+.quickopen-item:hover .quickopen-item-name {
+  color: var(--dialog-on-highlight);
+}
+
 .quickopen-item-path {
-  color: #808080;
+  color: var(--dialog-muted);
   font-size: 11px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.quickopen-item.selected .quickopen-item-path,
+.quickopen-item:hover .quickopen-item-path {
+  color: var(--dialog-on-highlight-muted);
 }
 
 /* 全局搜索弹窗 */
@@ -1064,8 +1134,8 @@ body.resizing {
   max-height: 70vh;
   display: flex;
   flex-direction: column;
-  background-color: #2d2d30;
-  border: 1px solid #454545;
+  background-color: var(--dialog-bg);
+  border: 1px solid var(--dialog-border);
   border-radius: 6px;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
   overflow: hidden;
@@ -1075,29 +1145,29 @@ body.resizing {
   padding: 10px 14px;
   font-size: 13px;
   font-weight: 600;
-  color: #e0e0e0;
-  border-bottom: 1px solid #3c3c3c;
+  color: var(--dialog-text);
+  border-bottom: 1px solid var(--dialog-input);
 }
 
 .search-input {
   margin: 10px 14px 0;
   padding: 8px 12px;
-  background-color: #3c3c3c;
-  border: 1px solid #454545;
+  background-color: var(--dialog-input);
+  border: 1px solid var(--dialog-border);
   border-radius: 3px;
-  color: #e0e0e0;
+  color: var(--dialog-text);
   font-size: 13px;
   outline: none;
 }
 
 .search-input:focus {
-  border-color: #007acc;
+  border-color: var(--accent);
 }
 
 .search-status {
   padding: 6px 14px;
   font-size: 11px;
-  color: #808080;
+  color: var(--dialog-muted);
   min-height: 22px;
 }
 
@@ -1111,8 +1181,8 @@ body.resizing {
   padding: 4px 14px;
   font-size: 12px;
   font-weight: 600;
-  color: #bbbbbb;
-  background-color: #252526;
+  color: var(--dialog-group-text);
+  background-color: var(--dialog-group-bg);
 }
 
 .search-match {
@@ -1124,21 +1194,29 @@ body.resizing {
 }
 
 .search-match:hover {
-  background-color: #094778;
+  background-color: var(--dialog-highlight);
 }
 
 .search-match-line {
-  color: #808080;
+  color: var(--dialog-muted);
   min-width: 36px;
   text-align: right;
   flex-shrink: 0;
 }
 
+.search-match:hover .search-match-line {
+  color: var(--dialog-on-highlight-muted);
+}
+
 .search-match-text {
-  color: #cccccc;
+  color: var(--dialog-text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.search-match:hover .search-match-text {
+  color: var(--dialog-on-highlight);
 }
 
 /* ============ Git 面板 ============ */
@@ -1257,7 +1335,7 @@ body.resizing {
 }
 
 .git-msg-error {
-  color: #f1737b;
+  color: var(--danger);
 }
 
 /* 变更/提交列表滚动区 */
@@ -1309,16 +1387,16 @@ body.resizing {
 .git-code-M,
 .git-code-R,
 .git-code-C {
-  color: #e0b45c;
+  color: var(--git-mod);
 }
 
 .git-code-A,
 .git-code-U {
-  color: #57c278;
+  color: var(--git-add);
 }
 
 .git-code-D {
-  color: #f1737b;
+  color: var(--git-del);
 }
 
 .git-file-path {
@@ -1410,4 +1488,128 @@ body.resizing {
   flex-shrink: 0;
   font-size: 11px;
   color: var(--text-faint);
+}
+
+/* ============================================================
+   自绘标题栏（原生标题栏隐藏 + 右上角原生窗口按钮 overlay）
+   ============================================================ */
+#title-bar {
+  height: 36px;
+  flex: none;
+  display: flex;
+  align-items: stretch;
+  background-color: var(--bg-bar);
+  border-bottom: 1px solid var(--border);
+  -webkit-app-region: drag;   /* 整条可拖拽窗口，双击最大化 */
+  user-select: none;
+  padding-right: 138px;        /* 为右上角原生窗口按钮 overlay 留位 */
+}
+
+#tb-app {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 10px 0 12px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.tb-logo {
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  background: linear-gradient(135deg, var(--accent), #7ab7ff);
+}
+
+#tb-menubar {
+  display: flex;
+  align-items: stretch;
+  -webkit-app-region: no-drag;
+}
+
+.tb-menu-btn {
+  position: relative;
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  font-size: 12.5px;
+  color: var(--text);
+  cursor: default;
+}
+
+.tb-menu-btn:hover {
+  background-color: var(--bg-hover);
+}
+
+.tb-menu-btn.open {
+  background-color: var(--bg-active);
+  color: var(--text-bright);
+}
+
+/* 下拉菜单面板 */
+.tb-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  min-width: 210px;
+  padding: 4px 0;
+  background-color: var(--dialog-bg);
+  border: 1px solid var(--dialog-border);
+  border-radius: 5px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+  z-index: 3000;
+}
+
+.tb-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  padding: 4px 14px;
+  font-size: 12.5px;
+  color: var(--dialog-text);
+  white-space: nowrap;
+}
+
+.tb-item:hover {
+  background-color: var(--dialog-highlight);
+  color: var(--on-highlight);
+}
+
+.tb-item.disabled,
+.tb-item.disabled:hover {
+  color: var(--text-faint);
+  background-color: transparent;
+}
+
+.tb-item-label {
+  flex: 1;
+}
+
+.tb-accel {
+  margin-left: 28px;
+  font-size: 11.5px;
+  opacity: 0.65;
+}
+
+.tb-arrow {
+  margin-left: 14px;
+  font-size: 10px;
+  opacity: 0.7;
+}
+
+.tb-sep {
+  height: 1px;
+  margin: 4px 8px;
+  background-color: var(--dialog-border);
+}
+
+/* 子菜单悬停飞出 */
+.tb-sub {
+  top: -5px;
+  left: 100%;
+  display: none;
+}
+
+.tb-item.has-sub:hover > .tb-sub {
+  display: block;
 }

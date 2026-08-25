@@ -28,12 +28,15 @@ const IPC_CHANNELS = {
   GIT_DISCARD: 'git:discard',
   GIT_COMMIT: 'git:commit',
   GIT_PULL: 'git:pull',
-  GIT_PUSH: 'git:push'
+  GIT_PUSH: 'git:push',
+  MENU_GET_TEMPLATE: 'menu:get-template',
+  MENU_INVOKE: 'menu:invoke'
 } as const;
 
 const MAIN_EVENTS = {
   PROJECT_OPENED: 'project:opened',
-  OPEN_SETTINGS: 'ui:open-settings'
+  OPEN_SETTINGS: 'ui:open-settings',
+  MENU_UPDATED: 'menu:updated'
 } as const;
 
 // 暴露安全的 API 给渲染进程
@@ -97,5 +100,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   gitDiscard: (repoPath: string, path: string) => ipcRenderer.invoke(IPC_CHANNELS.GIT_DISCARD, repoPath, path),
   gitCommit: (repoPath: string, message: string) => ipcRenderer.invoke(IPC_CHANNELS.GIT_COMMIT, repoPath, message),
   gitPull: (repoPath: string) => ipcRenderer.invoke(IPC_CHANNELS.GIT_PULL, repoPath),
-  gitPush: (repoPath: string) => ipcRenderer.invoke(IPC_CHANNELS.GIT_PUSH, repoPath)
+  gitPush: (repoPath: string) => ipcRenderer.invoke(IPC_CHANNELS.GIT_PUSH, repoPath),
+
+  // HTML 菜单栏：拉取菜单模型 / 执行菜单项 / 监听菜单重建
+  menuGetTemplate: () => ipcRenderer.invoke(IPC_CHANNELS.MENU_GET_TEMPLATE),
+  menuInvoke: (id: string) => ipcRenderer.invoke(IPC_CHANNELS.MENU_INVOKE, id),
+  onMenuUpdated: (callback: () => void) => {
+    ipcRenderer.on(MAIN_EVENTS.MENU_UPDATED, () => callback());
+  }
 });

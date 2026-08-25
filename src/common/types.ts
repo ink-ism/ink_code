@@ -45,20 +45,42 @@ export const IPC_CHANNELS = {
   GIT_DISCARD: 'git:discard',
   GIT_COMMIT: 'git:commit',
   GIT_PULL: 'git:pull',
-  GIT_PUSH: 'git:push'
+  GIT_PUSH: 'git:push',
+  MENU_GET_TEMPLATE: 'menu:get-template',
+  MENU_INVOKE: 'menu:invoke'
 } as const;
 
 // 主进程 -> 渲染进程 事件
 export const MAIN_EVENTS = {
   PROJECT_OPENED: 'project:opened',
-  OPEN_SETTINGS: 'ui:open-settings'
+  OPEN_SETTINGS: 'ui:open-settings',
+  MENU_UPDATED: 'menu:updated'
 } as const;
+
+// 可序列化菜单模型节点（HTML 菜单栏数据源）
+export interface MenuModelNode {
+  id?: string;
+  label?: string;
+  accelerator?: string;
+  role?: string;
+  separator?: boolean;
+  enabled?: boolean;
+  submenu?: MenuModelNode[];
+}
 
 // 编辑器配置
 export interface EditorSettings {
   configRoot: string;  // 配置文件保存目录
   theme: string;       // 主题配色
   fontSize: number;    // 字体大小
+}
+
+// 浅色主题列表：编辑器使用浅色配色时，外壳 UI / 窗口底色需同步切换
+export const LIGHT_THEMES = ['vs-light'];
+
+// 判断是否为浅色主题（主进程与渲染进程共用）
+export function isLightTheme(theme: string | null | undefined): boolean {
+  return LIGHT_THEMES.includes(theme ?? '');
 }
 
 // 最近打开的项目

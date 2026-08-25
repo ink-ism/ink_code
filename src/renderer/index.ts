@@ -11,7 +11,8 @@ import { registerMarkdownLanguage } from './services/markdown-language';
 import { registerJsonLanguage } from './services/json-language';
 import { MarkdownPreview } from './components/MarkdownPreview';
 import { GitPanel } from './components/GitPanel';
-import { FileTreeNode, FileSymbol, EditorSettings, SessionState, SearchMatch, GitStatusInfo, GitLogEntry } from '../common/types';
+import { TitleBar } from './components/TitleBar';
+import { FileTreeNode, FileSymbol, EditorSettings, SessionState, SearchMatch, GitLogEntry, GitStatusInfo, MenuModelNode, isLightTheme } from '../common/types';
 
 // 类型声明
 declare global {
@@ -45,6 +46,9 @@ declare global {
       gitCommit: (repoPath: string, message: string) => Promise<{ success: boolean; error?: string }>;
       gitPull: (repoPath: string) => Promise<{ success: boolean; error?: string }>;
       gitPush: (repoPath: string) => Promise<{ success: boolean; error?: string }>;
+      menuGetTemplate: () => Promise<MenuModelNode[]>;
+      menuInvoke: (id: string) => Promise<{ success: boolean }>;
+      onMenuUpdated: (callback: () => void) => void;
     };
   }
 }
@@ -86,6 +90,12 @@ async function init() {
   } catch (error) {
     console.error('加载配置失败:', error);
   }
+
+  // 外壳 UI 配色随主题同步切换（在创建编辑器前应用，避免闪烁）
+  applyUiTheme(settings?.theme);
+
+  // 自绘标题栏菜单栏（原生标题栏已隐藏，窗口按钮为 overlay）
+  void new TitleBar(document.getElementById('tb-menubar')!).init();
 
   // 初始化文件树
   fileTree = new FileTree(document.getElementById('file-tree')!);
@@ -185,6 +195,7 @@ async function init() {
 
   // 设置面板：保存后应用主题和字体
   settingsPanel = new SettingsPanel((newSettings) => {
+    applyUiTheme(newSettings.theme);
     editorPane?.setTheme(newSettings.theme);
     editorPane?.setFontSize(newSettings.fontSize);
   });
@@ -573,6 +584,11 @@ function updateGitStatusBar(status: GitStatusInfo | null) {
 // 路径拼接（项目根 + 相对路径）
 function joinPath(root: string, rel: string): string {
   return root.replace(/[\\/]+$/, '') + '\\' + rel.replace(/\//g, '\\');
+}
+
+// 同步外壳 UI 配色：通过 :root[data-theme] 切换 CSS 变量，与编辑器主题保持一致
+function applyUiTheme(theme: string | undefined) {
+  document.documentElement.setAttribute('data-theme', isLightTheme(theme) ? 'light' : 'dark');
 }
 
 // 防抖保存会话状态
