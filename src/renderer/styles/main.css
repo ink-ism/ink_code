@@ -1490,6 +1490,205 @@ body.resizing {
   color: var(--text-faint);
 }
 
+.git-log-row {
+  cursor: pointer;
+}
+
+.git-log-row-active {
+  background-color: var(--bg-active);
+}
+
+/* 加载更多按钮 */
+.git-load-more {
+  display: block;
+  margin: 4px 12px;
+  padding: 3px 0;
+  width: calc(100% - 24px);
+  font-size: 12px;
+  color: var(--text-muted);
+  background-color: transparent;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-s);
+  cursor: pointer;
+}
+
+.git-load-more:hover {
+  color: var(--text-bright);
+  background-color: var(--bg-hover);
+}
+
+/* 展开的提交文件列表 */
+.git-commit-files {
+  margin: 0 6px 2px 18px;
+  padding: 2px 0;
+  border-left: 2px solid var(--border);
+}
+
+.git-commit-files .git-file-row {
+  margin: 0 2px;
+}
+
+/* 流式进度提示（拉取/推送/获取） */
+.git-msg-progress {
+  color: var(--accent);
+}
+
+/* merge 进行中 / 冲突横幅 */
+.git-merge-banner {
+  margin: 6px;
+  padding: 8px 10px;
+  font-size: 12px;
+  color: var(--text-bright);
+  background-color: color-mix(in srgb, var(--git-del) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--git-del) 45%, transparent);
+  border-radius: var(--radius-s);
+}
+
+.git-merge-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 7px;
+}
+
+.git-merge-actions .git-btn {
+  flex: none;
+  padding: 3px 8px;
+}
+
+/* 冲突区 */
+.git-section-conflict {
+  color: var(--git-del);
+}
+
+.git-row-conflict {
+  color: var(--git-del);
+}
+
+.git-conflict-hint {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.git-row-conflict:hover .git-conflict-hint {
+  color: var(--text-muted);
+}
+
+/* 分支行 */
+.git-branch-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0 6px;
+  padding: 3px 6px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.git-branch-row:hover {
+  background-color: var(--bg-hover);
+}
+
+.git-branch-current {
+  cursor: default;
+  background-color: var(--bg-active);
+}
+
+.git-branch-current:hover {
+  background-color: var(--bg-active);
+}
+
+.git-branch-name {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.git-branch-current .git-branch-name {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.git-branch-sync {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.git-branch-actions {
+  flex-shrink: 0;
+}
+
+.git-branch-row:hover .git-branch-actions {
+  display: flex;
+}
+
+/* ============================================================
+   Diff 查看弹窗（全屏遮罩 + Monaco diff 编辑器）
+   ============================================================ */
+#diff-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 4000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 36px;
+  background-color: rgba(0, 0, 0, 0.5);
+}
+
+#diff-overlay[hidden] {
+  display: none;
+}
+
+.diff-box {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  background-color: var(--bg-base);
+  border: 1px solid var(--dialog-border);
+  border-radius: var(--radius-m, 8px);
+  box-shadow: 0 10px 36px rgba(0, 0, 0, 0.4);
+  overflow: hidden;
+}
+
+.diff-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--border);
+  background-color: var(--bg-bar);
+  flex: none;
+}
+
+.diff-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-bright);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.diff-labels {
+  flex: 1;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.diff-editor {
+  flex: 1;
+  min-height: 0;
+}
+
 /* ============================================================
    自绘标题栏（原生标题栏隐藏 + 右上角原生窗口按钮 overlay）
    ============================================================ */

@@ -29,6 +29,19 @@ const IPC_CHANNELS = {
   GIT_COMMIT: 'git:commit',
   GIT_PULL: 'git:pull',
   GIT_PUSH: 'git:push',
+  GIT_FETCH: 'git:fetch',
+  GIT_PUSH_UPSTREAM: 'git:push-upstream',
+  GIT_BRANCHES: 'git:branches',
+  GIT_CHECKOUT_BRANCH: 'git:checkout-branch',
+  GIT_CREATE_BRANCH: 'git:create-branch',
+  GIT_DELETE_BRANCH: 'git:delete-branch',
+  GIT_MERGE: 'git:merge',
+  GIT_MERGE_ABORT: 'git:merge-abort',
+  GIT_MERGE_CONTINUE: 'git:merge-continue',
+  GIT_DIFF_CONTENT: 'git:diff-content',
+  GIT_COMMIT_FILES: 'git:commit-files',
+  GIT_CLEAN_FILE: 'git:clean-file',
+  GIT_WATCH: 'git:watch',
   MENU_GET_TEMPLATE: 'menu:get-template',
   MENU_INVOKE: 'menu:invoke'
 } as const;
@@ -36,7 +49,9 @@ const IPC_CHANNELS = {
 const MAIN_EVENTS = {
   PROJECT_OPENED: 'project:opened',
   OPEN_SETTINGS: 'ui:open-settings',
-  MENU_UPDATED: 'menu:updated'
+  MENU_UPDATED: 'menu:updated',
+  GIT_PROGRESS: 'git:progress',
+  GIT_REPO_CHANGED: 'git:repo-changed'
 } as const;
 
 // 暴露安全的 API 给渲染进程
@@ -92,15 +107,35 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Git 相关
   gitStatus: (repoPath: string) => ipcRenderer.invoke(IPC_CHANNELS.GIT_STATUS, repoPath),
-  gitLog: (repoPath: string) => ipcRenderer.invoke(IPC_CHANNELS.GIT_LOG, repoPath),
+  gitLog: (repoPath: string, skip?: number, limit?: number) => ipcRenderer.invoke(IPC_CHANNELS.GIT_LOG, repoPath, skip, limit),
+  gitCommitFiles: (repoPath: string, hash: string) => ipcRenderer.invoke(IPC_CHANNELS.GIT_COMMIT_FILES, repoPath, hash),
+  gitDiffContent: (repoPath: string, path: string, mode: string, ref?: string) =>
+    ipcRenderer.invoke(IPC_CHANNELS.GIT_DIFF_CONTENT, repoPath, path, mode, ref),
   gitStage: (repoPath: string, paths: string[]) => ipcRenderer.invoke(IPC_CHANNELS.GIT_STAGE, repoPath, paths),
   gitUnstage: (repoPath: string, paths: string[]) => ipcRenderer.invoke(IPC_CHANNELS.GIT_UNSTAGE, repoPath, paths),
   gitStageAll: (repoPath: string) => ipcRenderer.invoke(IPC_CHANNELS.GIT_STAGE_ALL, repoPath),
   gitUnstageAll: (repoPath: string) => ipcRenderer.invoke(IPC_CHANNELS.GIT_UNSTAGE_ALL, repoPath),
   gitDiscard: (repoPath: string, path: string) => ipcRenderer.invoke(IPC_CHANNELS.GIT_DISCARD, repoPath, path),
+  gitCleanFile: (repoPath: string, path: string) => ipcRenderer.invoke(IPC_CHANNELS.GIT_CLEAN_FILE, repoPath, path),
   gitCommit: (repoPath: string, message: string) => ipcRenderer.invoke(IPC_CHANNELS.GIT_COMMIT, repoPath, message),
   gitPull: (repoPath: string) => ipcRenderer.invoke(IPC_CHANNELS.GIT_PULL, repoPath),
   gitPush: (repoPath: string) => ipcRenderer.invoke(IPC_CHANNELS.GIT_PUSH, repoPath),
+  gitFetch: (repoPath: string) => ipcRenderer.invoke(IPC_CHANNELS.GIT_FETCH, repoPath),
+  gitPushUpstream: (repoPath: string, branch: string) => ipcRenderer.invoke(IPC_CHANNELS.GIT_PUSH_UPSTREAM, repoPath, branch),
+  gitBranches: (repoPath: string) => ipcRenderer.invoke(IPC_CHANNELS.GIT_BRANCHES, repoPath),
+  gitCheckoutBranch: (repoPath: string, name: string) => ipcRenderer.invoke(IPC_CHANNELS.GIT_CHECKOUT_BRANCH, repoPath, name),
+  gitCreateBranch: (repoPath: string, name: string) => ipcRenderer.invoke(IPC_CHANNELS.GIT_CREATE_BRANCH, repoPath, name),
+  gitDeleteBranch: (repoPath: string, name: string, force?: boolean) => ipcRenderer.invoke(IPC_CHANNELS.GIT_DELETE_BRANCH, repoPath, name, force),
+  gitMerge: (repoPath: string, branch: string) => ipcRenderer.invoke(IPC_CHANNELS.GIT_MERGE, repoPath, branch),
+  gitMergeAbort: (repoPath: string) => ipcRenderer.invoke(IPC_CHANNELS.GIT_MERGE_ABORT, repoPath),
+  gitMergeContinue: (repoPath: string) => ipcRenderer.invoke(IPC_CHANNELS.GIT_MERGE_CONTINUE, repoPath),
+  gitWatch: (repoPath: string) => ipcRenderer.invoke(IPC_CHANNELS.GIT_WATCH, repoPath),
+  onGitProgress: (callback: (line: string) => void) => {
+    ipcRenderer.on(MAIN_EVENTS.GIT_PROGRESS, (_event, line: string) => callback(line));
+  },
+  onGitRepoChanged: (callback: () => void) => {
+    ipcRenderer.on(MAIN_EVENTS.GIT_REPO_CHANGED, () => callback());
+  },
 
   // HTML 菜单栏：拉取菜单模型 / 执行菜单项 / 监听菜单重建
   menuGetTemplate: () => ipcRenderer.invoke(IPC_CHANNELS.MENU_GET_TEMPLATE),
