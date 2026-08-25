@@ -335,6 +335,18 @@ export class EditorPane {
       case 'md': return 'markdown';
       case 'markdown': return 'markdown';
       case 'sql': return 'sql';
+      case 'py': return 'python';
+      case 'go': return 'go';
+      case 'bat': return 'bat';
+      case 'cmd': return 'bat';
+      case 'sh': return 'shell';
+      case 'bash': return 'shell';
+      case 'ps1': return 'powershell';
+      case 'yml': return 'yaml';
+      case 'yaml': return 'yaml';
+      case 'properties': return 'properties';
+      case 'ini': return 'ini';
+      case 'conf': return 'ini';
       default: return 'plaintext';
     }
   }
