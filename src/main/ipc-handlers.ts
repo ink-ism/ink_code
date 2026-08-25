@@ -1,6 +1,6 @@
 import { ipcMain, dialog, shell, nativeTheme, BrowserWindow } from 'electron';
 import { readFile, writeFile } from 'fs/promises';
-import { IPC_CHANNELS, isLightTheme } from '../common/types';
+import { IPC_CHANNELS, MAIN_EVENTS, isLightTheme } from '../common/types';
 import { scanDirectory, scanFullTree } from './file-service';
 import { indexFile, indexProject, clearCache } from './index-service';
 import { loadSettings, saveSettings, loadRecentProjects, loadSession, saveSession } from './config-service';
@@ -8,9 +8,21 @@ import { getMenuModel, invokeMenuAction, applyTitleBarOverlay } from './menu-ser
 import { decodeBuffer, encodeContent } from './encoding';
 import { listAllFiles, searchProject } from './search-service';
 import {
-  getGitStatus, getGitLog, gitStage, gitUnstage, gitStageAll, gitUnstageAll,
-  gitDiscard, gitCommit, gitPull, gitPush
+  getGitStatus, getGitLog, getGitCommitFiles, gitStage, gitUnstage, gitStageAll, gitUnstageAll,
+  gitDiscard, gitCleanFile, gitCommit, gitPull, gitPush, gitFetch, gitPushUpstream,
+  getGitBranches, gitCheckoutBranch, gitCreateBranch, gitDeleteBranch,
+  gitMerge, gitMergeAbort, gitMergeContinue, getGitDiffContent, watchRepo
 } from './git-service';
+
+// 当前仓库的 .git 目录 watcher（外部变更自动刷新）
+let repoWatcherClose: (() => void) | null = null;
+
+// 向所有窗口广播事件（单窗口应用）
+function broadcast(channel: string, ...args: unknown[]) {
+  for (const win of BrowserWindow.getAllWindows()) {
+    win.webContents.send(channel, ...args);
+  }
+}
 
 export function registerIpcHandlers() {
   // 打开目录选择对话框
@@ -195,10 +207,131 @@ export function registerIpcHandlers() {
     }
   });
 
-  // 最近提交记录
-  ipcMain.handle(IPC_CHANNELS.GIT_LOG, async (_event, repoPath: string) => {
+  // 最近提交记录（分页）
+  ipcMain.handle(IPC_CHANNELS.GIT_LOG, async (_event, repoPath: string, skip?: number, limit?: number) => {
     try {
-      return { success: true, entries: await getGitLog(repoPath) };
+      const { entries, hasMore } = await getGitLog(repoPath, skip ?? 0, limit);
+      return { success: true, entries, hasMore };
+    } catch (error) {
+      return { success: false, error: String((error as Error).message ?? error) };
+    }
+  });
+
+  // 提交包含的变更文件
+  ipcMain.handle(IPC_CHANNELS.GIT_COMMIT_FILES, async (_event, repoPath: string, hash: string) => {
+    try {
+      return { success: true, files: await getGitCommitFiles(repoPath, hash) };
+    } catch (error) {
+      return { success: false, error: String((error as Error).message ?? error) };
+    }
+  });
+
+  // 文件 diff 双侧内容
+  ipcMain.handle(IPC_CHANNELS.GIT_DIFF_CONTENT, async (
+    _event, repoPath: string, path: string, mode: 'work' | 'staged' | 'commit', ref?: string
+  ) => {
+    try {
+      return { success: true, diff: await getGitDiffContent(repoPath, path, mode, ref) };
+    } catch (error) {
+      return { success: false, error: String((error as Error).message ?? error) };
+    }
+  });
+
+  // 本地分支列表
+  ipcMain.handle(IPC_CHANNELS.GIT_BRANCHES, async (_event, repoPath: string) => {
+    try {
+      return { success: true, branches: await getGitBranches(repoPath) };
+    } catch (error) {
+      return { success: false, error: String((error as Error).message ?? error) };
+    }
+  });
+
+  // 切换分支
+  ipcMain.handle(IPC_CHANNELS.GIT_CHECKOUT_BRANCH, async (_event, repoPath: string, name: string) => {
+    try {
+      await gitCheckoutBranch(repoPath, name);
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: String((error as Error).message ?? error) };
+    }
+  });
+
+  // 新建分支并切换
+  ipcMain.handle(IPC_CHANNELS.GIT_CREATE_BRANCH, async (_event, repoPath: string, name: string) => {
+    try {
+      await gitCreateBranch(repoPath, name);
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: String((error as Error).message ?? error) };
+    }
+  });
+
+  // 删除分支
+  ipcMain.handle(IPC_CHANNELS.GIT_DELETE_BRANCH, async (_event, repoPath: string, name: string, force?: boolean) => {
+    try {
+      await gitDeleteBranch(repoPath, name, force ?? false);
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: String((error as Error).message ?? error) };
+    }
+  });
+
+  // 拉取远端（fetch，带进度回传）
+  ipcMain.handle(IPC_CHANNELS.GIT_FETCH, async (_event, repoPath: string) => {
+    try {
+      await gitFetch(repoPath, (line) => broadcast(MAIN_EVENTS.GIT_PROGRESS, line));
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: String((error as Error).message ?? error) };
+    }
+  });
+
+  // 合并分支
+  ipcMain.handle(IPC_CHANNELS.GIT_MERGE, async (_event, repoPath: string, branch: string) => {
+    try {
+      const result = await gitMerge(repoPath, branch);
+      return { success: result.ok, conflicts: result.conflicts, error: result.ok ? undefined : result.message };
+    } catch (error) {
+      return { success: false, error: String((error as Error).message ?? error) };
+    }
+  });
+
+  // 中止合并
+  ipcMain.handle(IPC_CHANNELS.GIT_MERGE_ABORT, async (_event, repoPath: string) => {
+    try {
+      await gitMergeAbort(repoPath);
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: String((error as Error).message ?? error) };
+    }
+  });
+
+  // 完成合并提交（冲突解决后）
+  ipcMain.handle(IPC_CHANNELS.GIT_MERGE_CONTINUE, async (_event, repoPath: string) => {
+    try {
+      await gitMergeContinue(repoPath);
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: String((error as Error).message ?? error) };
+    }
+  });
+
+  // 删除未跟踪文件
+  ipcMain.handle(IPC_CHANNELS.GIT_CLEAN_FILE, async (_event, repoPath: string, path: string) => {
+    try {
+      await gitCleanFile(repoPath, path);
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: String((error as Error).message ?? error) };
+    }
+  });
+
+  // 监听仓库 .git 目录变更（外部操作自动刷新）
+  ipcMain.handle(IPC_CHANNELS.GIT_WATCH, async (_event, repoPath: string) => {
+    try {
+      repoWatcherClose?.();
+      repoWatcherClose = watchRepo(repoPath, () => broadcast(MAIN_EVENTS.GIT_REPO_CHANGED)) ?? null;
+      return { success: true };
     } catch (error) {
       return { success: false, error: String((error as Error).message ?? error) };
     }
@@ -264,21 +397,31 @@ export function registerIpcHandlers() {
     }
   });
 
-  // 拉取
+  // 拉取（带进度回传）
   ipcMain.handle(IPC_CHANNELS.GIT_PULL, async (_event, repoPath: string) => {
     try {
-      const output = await gitPull(repoPath);
+      const output = await gitPull(repoPath, (line) => broadcast(MAIN_EVENTS.GIT_PROGRESS, line));
       return { success: true, output };
     } catch (error) {
       return { success: false, error: String((error as Error).message ?? error) };
     }
   });
 
-  // 推送
+  // 推送（带进度回传）
   ipcMain.handle(IPC_CHANNELS.GIT_PUSH, async (_event, repoPath: string) => {
     try {
-      const output = await gitPush(repoPath);
+      const output = await gitPush(repoPath, (line) => broadcast(MAIN_EVENTS.GIT_PROGRESS, line));
       return { success: true, output };
+    } catch (error) {
+      return { success: false, error: String((error as Error).message ?? error) };
+    }
+  });
+
+  // 首次推送无上游分支：push -u origin <branch>
+  ipcMain.handle(IPC_CHANNELS.GIT_PUSH_UPSTREAM, async (_event, repoPath: string, branch: string) => {
+    try {
+      await gitPushUpstream(repoPath, branch, (line) => broadcast(MAIN_EVENTS.GIT_PROGRESS, line));
+      return { success: true };
     } catch (error) {
       return { success: false, error: String((error as Error).message ?? error) };
     }

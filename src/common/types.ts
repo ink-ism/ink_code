@@ -46,6 +46,19 @@ export const IPC_CHANNELS = {
   GIT_COMMIT: 'git:commit',
   GIT_PULL: 'git:pull',
   GIT_PUSH: 'git:push',
+  GIT_FETCH: 'git:fetch',
+  GIT_PUSH_UPSTREAM: 'git:push-upstream',
+  GIT_BRANCHES: 'git:branches',
+  GIT_CHECKOUT_BRANCH: 'git:checkout-branch',
+  GIT_CREATE_BRANCH: 'git:create-branch',
+  GIT_DELETE_BRANCH: 'git:delete-branch',
+  GIT_MERGE: 'git:merge',
+  GIT_MERGE_ABORT: 'git:merge-abort',
+  GIT_MERGE_CONTINUE: 'git:merge-continue',
+  GIT_DIFF_CONTENT: 'git:diff-content',
+  GIT_COMMIT_FILES: 'git:commit-files',
+  GIT_CLEAN_FILE: 'git:clean-file',
+  GIT_WATCH: 'git:watch',
   MENU_GET_TEMPLATE: 'menu:get-template',
   MENU_INVOKE: 'menu:invoke'
 } as const;
@@ -54,7 +67,9 @@ export const IPC_CHANNELS = {
 export const MAIN_EVENTS = {
   PROJECT_OPENED: 'project:opened',
   OPEN_SETTINGS: 'ui:open-settings',
-  MENU_UPDATED: 'menu:updated'
+  MENU_UPDATED: 'menu:updated',
+  GIT_PROGRESS: 'git:progress',
+  GIT_REPO_CHANGED: 'git:repo-changed'
 } as const;
 
 // 可序列化菜单模型节点（HTML 菜单栏数据源）
@@ -120,6 +135,17 @@ export interface GitStatusInfo {
   staged: GitFileChange[];     // 已暂存
   changes: GitFileChange[];    // 工作区修改（未暂存）
   untracked: GitFileChange[];  // 未跟踪
+  conflicts: GitFileChange[];  // 未解决冲突（code 为 XY 两位，如 UU）
+  mergeInProgress: boolean;    // 是否处于 merge 中（存在 MERGE_HEAD）
+}
+
+// Git 分支信息
+export interface GitBranchInfo {
+  name: string;
+  upstream: string | null;
+  ahead: number;
+  behind: number;
+  isCurrent: boolean;
 }
 
 // Git 提交记录
@@ -128,4 +154,20 @@ export interface GitLogEntry {
   author: string;
   date: string;
   message: string;
+}
+
+// 提交包含的变更文件
+export interface GitCommitFile {
+  code: string;   // M/A/D/R 等
+  path: string;
+}
+
+// diff 查看模式：工作区 vs 暂存区 / 暂存区 vs HEAD / 指定提交 vs 其父提交
+export type GitDiffMode = 'work' | 'staged' | 'commit';
+
+// 文件 diff 内容（双侧原文，供 Monaco diff 编辑器使用）
+export interface GitDiffContent {
+  original: string;
+  modified: string;
+  binary: boolean;   // 二进制文件不展示文本 diff
 }

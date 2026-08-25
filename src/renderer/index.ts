@@ -11,9 +11,10 @@ import { registerMarkdownLanguage } from './services/markdown-language';
 import { registerJsonLanguage } from './services/json-language';
 import { registerPropertiesLanguage } from './services/properties-language';
 import { MarkdownPreview } from './components/MarkdownPreview';
-import { GitPanel } from './components/GitPanel';
+import { GitPanel, GitDiffRequest } from './components/GitPanel';
+import { DiffViewer, detectLanguage } from './components/DiffViewer';
 import { TitleBar } from './components/TitleBar';
-import { FileTreeNode, FileSymbol, EditorSettings, SessionState, SearchMatch, GitLogEntry, GitStatusInfo, MenuModelNode, isLightTheme } from '../common/types';
+import { FileTreeNode, FileSymbol, EditorSettings, SessionState, SearchMatch, GitLogEntry, GitStatusInfo, GitBranchInfo, GitCommitFile, GitDiffContent, GitDiffMode, MenuModelNode, isLightTheme } from '../common/types';
 
 // 类型声明
 declare global {
@@ -38,7 +39,9 @@ declare global {
       searchProject: (root: string, query: string) => Promise<{ success: boolean; matches?: SearchMatch[]; error?: string }>;
       openExternal: (url: string) => Promise<{ success: boolean; error?: string }>;
       gitStatus: (repoPath: string) => Promise<{ success: boolean; status?: GitStatusInfo; error?: string }>;
-      gitLog: (repoPath: string) => Promise<{ success: boolean; entries?: GitLogEntry[]; error?: string }>;
+      gitLog: (repoPath: string, skip?: number, limit?: number) => Promise<{ success: boolean; entries?: GitLogEntry[]; hasMore?: boolean; error?: string }>;
+      gitCommitFiles: (repoPath: string, hash: string) => Promise<{ success: boolean; files?: GitCommitFile[]; error?: string }>;
+      gitDiffContent: (repoPath: string, path: string, mode: GitDiffMode, ref?: string) => Promise<{ success: boolean; diff?: GitDiffContent; error?: string }>;
       gitStage: (repoPath: string, paths: string[]) => Promise<{ success: boolean; error?: string }>;
       gitUnstage: (repoPath: string, paths: string[]) => Promise<{ success: boolean; error?: string }>;
       gitStageAll: (repoPath: string) => Promise<{ success: boolean; error?: string }>;
@@ -47,6 +50,19 @@ declare global {
       gitCommit: (repoPath: string, message: string) => Promise<{ success: boolean; error?: string }>;
       gitPull: (repoPath: string) => Promise<{ success: boolean; error?: string }>;
       gitPush: (repoPath: string) => Promise<{ success: boolean; error?: string }>;
+      gitFetch: (repoPath: string) => Promise<{ success: boolean; error?: string }>;
+      gitPushUpstream: (repoPath: string, branch: string) => Promise<{ success: boolean; error?: string }>;
+      gitBranches: (repoPath: string) => Promise<{ success: boolean; branches?: GitBranchInfo[]; error?: string }>;
+      gitCheckoutBranch: (repoPath: string, name: string) => Promise<{ success: boolean; error?: string }>;
+      gitCreateBranch: (repoPath: string, name: string) => Promise<{ success: boolean; error?: string }>;
+      gitDeleteBranch: (repoPath: string, name: string, force?: boolean) => Promise<{ success: boolean; error?: string }>;
+      gitMerge: (repoPath: string, branch: string) => Promise<{ success: boolean; conflicts?: boolean; error?: string }>;
+      gitMergeAbort: (repoPath: string) => Promise<{ success: boolean; error?: string }>;
+      gitMergeContinue: (repoPath: string) => Promise<{ success: boolean; error?: string }>;
+      gitCleanFile: (repoPath: string, path: string) => Promise<{ success: boolean; error?: string }>;
+      gitWatch: (repoPath: string) => Promise<{ success: boolean; error?: string }>;
+      onGitProgress: (callback: (line: string) => void) => void;
+      onGitRepoChanged: (callback: () => void) => void;
       menuGetTemplate: () => Promise<MenuModelNode[]>;
       menuInvoke: (id: string) => Promise<{ success: boolean }>;
       onMenuUpdated: (callback: () => void) => void;
@@ -65,6 +81,8 @@ let searchPanel: SearchPanel | null = null;
 let sessionTimer: number | undefined;
 let markdownPreview: MarkdownPreview | null = null;
 let gitPanel: GitPanel | null = null;
+let diffViewer: DiffViewer | null = null;
+let gitPollTimer: number | undefined;
 let mdMode: MdMode = 'edit';
 let mdRenderTimer: number | undefined;
 // 大文件保护：超过该大小不创建 TextModel，避免单文件内存爆张
@@ -172,7 +190,7 @@ async function init() {
     editorPane?.goToLine(line);
   };
 
-  // 初始化 Git 面板：点击变更文件在编辑器打开，状态变化同步到状态栏
+  // 初始化 Git 面板：点击变更文件在编辑器打开，状态变化同步到状态栏，点击文件查看 diff
   gitPanel = new GitPanel(
     document.getElementById('git-panel')!,
     document.getElementById('git-branch')!,
@@ -182,12 +200,20 @@ async function init() {
           openFile(joinPath(currentProjectPath, relPath));
         }
       },
-      onStatusUpdate: (status) => updateGitStatusBar(status)
+      onStatusUpdate: (status) => updateGitStatusBar(status),
+      onShowDiff: (req) => showDiff(req)
     }
   );
   document.getElementById('btn-git-refresh')!.addEventListener('click', () => {
     gitPanel?.refresh();
   });
+
+  // Diff 查看弹窗（惰性创建 Monaco diff 编辑器）
+  diffViewer = new DiffViewer();
+
+  // Git 流式进度（拉取/推送/获取）与外部变更通知（主进程 .git watcher）
+  window.electronAPI.onGitProgress((line) => gitPanel?.showProgress(line));
+  window.electronAPI.onGitRepoChanged(() => gitPanel?.refresh());
 
   // 监听菜单栏 Project -> 打开项目 事件
   window.electronAPI.onProjectOpened((dirPath) => {
@@ -265,17 +291,20 @@ function initResizer() {
   const MAX_WIDTH = 600;
 
   let isResizing = false;
+  // 侧边栏左边缘（活动栏之后），拖动开始时记录，避免宽度跳变
+  let sidebarLeft = 0;
 
   resizer.addEventListener('mousedown', (e) => {
     e.preventDefault();
     isResizing = true;
+    sidebarLeft = sidebar.getBoundingClientRect().left;
     resizer.classList.add('dragging');
     document.body.classList.add('resizing');
   });
 
   document.addEventListener('mousemove', (e) => {
     if (!isResizing) return;
-    const newWidth = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, e.clientX));
+    const newWidth = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, e.clientX - sidebarLeft));
     sidebar.style.width = newWidth + 'px';
   });
 
@@ -310,6 +339,7 @@ function switchSidebarView(view: SidebarView) {
   if (view === 'git') {
     gitPanel?.refresh();
   }
+  updateGitPolling();
 }
 
 // 活动栏按钮：点击当前视图时收起侧边栏，否则切换到对应视图
@@ -320,6 +350,7 @@ function toggleSidebarView(view: SidebarView) {
     document.getElementById('resizer')!.style.display = 'none';
     document.getElementById('btn-explorer')!.classList.remove('active');
     document.getElementById('btn-git')!.classList.remove('active');
+    updateGitPolling();
     return;
   }
   switchSidebarView(view);
@@ -389,9 +420,10 @@ async function loadProject(dirPath: string, restore?: SessionState) {
   document.getElementById('project-name')!.textContent = dirPath.split(/[/\\]/).pop() || dirPath;
   updateBreadcrumb(null);
 
-  // 切换项目后刷新 Git 面板（分支、变更、提交记录）
+  // 切换项目后刷新 Git 面板（分支、变更、提交记录），并注册仓库变更监听
   gitPanel?.setProject(dirPath);
   gitPanel?.refresh();
+  window.electronAPI.gitWatch(dirPath).catch(() => { /* 监听失败不影响主流程 */ });
 
   try {
     // 加载文件树
@@ -579,8 +611,55 @@ function updateGitStatusBar(status: GitStatusInfo | null) {
   let text = `⎇ ${status.branch}`;
   const dirty = status.staged.length + status.changes.length + status.untracked.length;
   if (dirty > 0) text += ` · ${dirty} 变更`;
+  if (status.conflicts.length > 0) text += ` · ⚠${status.conflicts.length} 冲突`;
   el.textContent = text;
   el.hidden = false;
+}
+
+// 查看文件 diff：拉取双侧内容后交给 DiffViewer 展示
+async function showDiff(req: GitDiffRequest) {
+  if (!currentProjectPath) return;
+  const res = await window.electronAPI.gitDiffContent(currentProjectPath, req.path, req.mode, req.ref);
+  if (!res.success || !res.diff) {
+    alert(res.error || '获取 diff 内容失败');
+    return;
+  }
+  if (res.diff.binary) {
+    alert(`“${req.path}” 为二进制文件，无法展示文本差异`);
+    return;
+  }
+  const name = req.path.split(/[\\/]/).pop() || req.path;
+  let originalLabel: string;
+  let modifiedLabel: string;
+  if (req.mode === 'work') {
+    originalLabel = '暂存区';
+    modifiedLabel = '工作区';
+  } else if (req.mode === 'staged') {
+    originalLabel = 'HEAD';
+    modifiedLabel = '暂存区';
+  } else {
+    const short = (req.ref ?? '').slice(0, 7);
+    originalLabel = `${short}^`;
+    modifiedLabel = short;
+  }
+  diffViewer?.show({
+    title: name,
+    originalLabel,
+    modifiedLabel,
+    original: res.diff.original,
+    modified: res.diff.modified,
+    language: detectLanguage(name)
+  });
+}
+
+// Git 视图可见时兜底轮询（主进程 watcher 之外的双保险，覆盖 watcher 失效场景）
+function updateGitPolling() {
+  window.clearInterval(gitPollTimer);
+  gitPollTimer = undefined;
+  const sidebar = document.getElementById('sidebar')!;
+  if (currentSidebarView === 'git' && sidebar.style.display !== 'none') {
+    gitPollTimer = window.setInterval(() => gitPanel?.refresh(), 15000);
+  }
 }
 
 // 路径拼接（项目根 + 相对路径）
