@@ -8,7 +8,8 @@ const SKIP_DIRS = new Set(['node_modules', '.git', 'target', 'dist', 'build', '.
 // 参与搜索/列表的文本文件扩展名
 const TEXT_EXTS = new Set([
   '.java', '.xml', '.yml', '.yaml', '.properties', '.json', '.ts', '.js',
-  '.md', '.txt', '.sql', '.html', '.css', '.kt', '.gradle', '.ini', '.conf'
+  '.md', '.txt', '.sql', '.html', '.css', '.kt', '.gradle', '.ini', '.conf',
+  '.py', '.go', '.bat', '.cmd', '.sh', '.bash', '.ps1'
 ]);
 
 // 列表时跳过的二进制/资源扩展名

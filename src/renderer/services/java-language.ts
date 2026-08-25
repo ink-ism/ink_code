@@ -182,7 +182,33 @@ export function registerJavaLanguage(): void {
       { token: 'md-link', foreground: '5b9dff', fontStyle: 'underline' },
       { token: 'md-quote', foreground: '6a9955', fontStyle: 'italic' },
       { token: 'md-list', foreground: '569cd6' },
-      { token: 'md-hr', foreground: '8f8f98' }
+      { token: 'md-hr', foreground: '8f8f98' },
+
+      // Python / Go / Shell / bat / PowerShell 内置文法扩展 token
+      // python 装饰器 @xxx（内置文法产出 tag token）
+      { token: 'tag', foreground: 'd7ba7d' },
+      // bat 标签 :label / shell shebang #!/bin/bash / ps 行首标签
+      { token: 'metatag', foreground: 'd7ba7d' },
+      // shell 命令行选项 --help / -f
+      { token: 'attribute.name', foreground: '9cdcfe' },
+      // shell 预定义变量 $0 $@ $? $#
+      { token: 'variable.predefined', foreground: '4fc1ff', fontStyle: 'italic' },
+      // shell heredoc << 标记（token 为 constants，不命中 constant 前缀）
+      { token: 'constants', foreground: 'c586c0' },
+      { token: 'string.heredoc', foreground: 'ce9178' },
+      { token: 'string.heredoc.delimiter', foreground: 'd7ba7d' },
+      // go 八进制字面量
+      { token: 'number.octal', foreground: 'b5cea8' },
+
+      // YAML / INI / Properties 配置文件扩展 token
+      // yaml/ini/properties 键名
+      { token: 'key', foreground: '9cdcfe' },
+      // yaml 结构符号 -?: / --- / ...（token 为 operators，不命中 operator 前缀）
+      { token: 'operators', foreground: 'd4d4d4' },
+      // yaml 指令 %YAML / %TAG
+      { token: 'meta.directive', foreground: 'c586c0' },
+      // yaml 锚点 &xxx 与别名 *xxx
+      { token: 'namespace', foreground: '4fc1ff' }
     ],
     colors: {
       'editor.background': '#17171a',

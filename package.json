@@ -1,6 +1,6 @@
 {
   "name": "inkcode",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Code editor based on Electron + Monaco Editor",
   "main": "dist/main/main/index.js",
   "scripts": {

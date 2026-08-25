@@ -9,6 +9,7 @@ import { registerJavaLanguage } from './services/java-language';
 import { registerSqlLanguage } from './services/sql-language';
 import { registerMarkdownLanguage } from './services/markdown-language';
 import { registerJsonLanguage } from './services/json-language';
+import { registerPropertiesLanguage } from './services/properties-language';
 import { MarkdownPreview } from './components/MarkdownPreview';
 import { GitPanel } from './components/GitPanel';
 import { TitleBar } from './components/TitleBar';
@@ -79,6 +80,7 @@ async function init() {
   registerSqlLanguage();
   registerMarkdownLanguage();
   registerJsonLanguage();
+  registerPropertiesLanguage();
 
   // 加载配置（主题、字体大小）
   let settings: EditorSettings | null = null;
