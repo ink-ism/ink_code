@@ -2,10 +2,10 @@ import { app } from 'electron';
 import { readFile, writeFile, mkdir } from 'fs/promises';
 import { existsSync } from 'fs';
 import { join } from 'path';
-import type { EditorSettings, RecentProject } from '../common/types';
+import type { EditorSettings, RecentProject, Keybinding, TasksConfig } from '../common/types';
 import type { SessionState } from '../common/types';
 
-export type { EditorSettings, RecentProject, SessionState };
+export type { EditorSettings, RecentProject, SessionState, Keybinding, TasksConfig };
 
 // 默认配置根目录
 function defaultConfigRoot(): string {
@@ -61,7 +61,13 @@ export async function loadSettings(): Promise<EditorSettings> {
   const defaults: EditorSettings = {
     configRoot: root,
     theme: 'ink-java-dark',
-    fontSize: 14
+    fontSize: 14,
+    autoSave: 'off',
+    autoSaveDelay: 1000,
+    tabSize: 4,
+    wordWrap: 'off',
+    minimap: true,
+    javaServerPath: ''
   };
 
   try {
@@ -160,3 +166,91 @@ export async function saveSession(session: SessionState): Promise<void> {
     'utf-8'
   );
 }
+
+// 空任务配置默认值
+const EMPTY_TASKS: TasksConfig = {
+  global: { buildScript: '', runScript: '' },
+  projects: {}
+};
+
+/**
+ * 读取编译运行任务配置（settings/tasks.json，系统级 + 项目级）
+ */
+export async function loadTasksConfig(): Promise<TasksConfig> {
+  const root = await getConfigRoot();
+  await ensureDirs(root);
+
+  try {
+    const data = JSON.parse(await readFile(join(root, 'settings', 'tasks.json'), 'utf-8'));
+    return {
+      global: { ...EMPTY_TASKS.global, ...(data.global || {}) },
+      projects: data.projects && typeof data.projects === 'object' ? data.projects : {}
+    };
+  } catch {
+    return JSON.parse(JSON.stringify(EMPTY_TASKS)) as TasksConfig;
+  }
+}
+
+/**
+ * 保存编译运行任务配置
+ */
+export async function saveTasksConfig(config: TasksConfig): Promise<void> {
+  const root = await getConfigRoot();
+  await ensureDirs(root);
+  await writeFile(
+    join(root, 'settings', 'tasks.json'),
+    JSON.stringify(config, null, 2),
+    'utf-8'
+  );
+}
+
+// 默认键绑定
+const DEFAULT_KEYBINDINGS: Keybinding[] = [
+  { command: 'file.save', key: 'ctrl+s' },
+  { command: 'file.saveAll', key: 'ctrl+shift+s' },
+  { command: 'file.openProject', key: 'ctrl+o' },
+  { command: 'file.quickOpen', key: 'ctrl+p' },
+  { command: 'edit.undo', key: 'ctrl+z' },
+  { command: 'edit.redo', key: 'ctrl+y' },
+  { command: 'search.find', key: 'ctrl+f' },
+  { command: 'search.findInFiles', key: 'ctrl+shift+f' },
+  { command: 'search.replace', key: 'ctrl+h' },
+  { command: 'view.toggleTerminal', key: 'ctrl+`' },
+  { command: 'view.toggleSidebar', key: 'ctrl+b' },
+  { command: 'settings.open', key: 'ctrl+,' },
+  { command: 'markdown.togglePreview', key: 'ctrl+shift+v' },
+  { command: 'task.build', key: 'ctrl+shift+b' },
+  { command: 'task.run', key: 'f5' },
+  { command: 'task.buildRun', key: 'ctrl+f5' }
+];
+
+/**
+ * 读取键盘映射配置
+ */
+export async function loadKeybindings(): Promise<Keybinding[]> {
+  const root = await getConfigRoot();
+  await ensureDirs(root);
+
+  try {
+    const data = JSON.parse(await readFile(join(root, 'settings', 'keybindings.json'), 'utf-8'));
+    if (Array.isArray(data)) return data;
+    return [...DEFAULT_KEYBINDINGS];
+  } catch {
+    return [...DEFAULT_KEYBINDINGS];
+  }
+}
+
+/**
+ * 保存键盘映射配置
+ */
+export async function saveKeybindings(keybindings: Keybinding[]): Promise<void> {
+  const root = await getConfigRoot();
+  await ensureDirs(root);
+  await writeFile(
+    join(root, 'settings', 'keybindings.json'),
+    JSON.stringify(keybindings, null, 2),
+    'utf-8'
+  );
+}
+
+export { DEFAULT_KEYBINDINGS };

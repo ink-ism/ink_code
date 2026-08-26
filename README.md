@@ -1,6 +1,6 @@
 # InkCode
 
-基于 **Electron + Monaco Editor** 的轻量级代码编辑器，面向 Java 项目的日常浏览与编辑场景，提供文件树、符号大纲、全局搜索、Git 集成、GBK/UTF-8 编码自动识别等能力，并内置 SQL / Markdown / JSON / Properties 增强高亮与 Markdown 实时预览。
+基于 **Electron + Monaco Editor** 的轻量级代码编辑器，面向 Java 项目的日常浏览与编辑场景，提供文件树、符号大纲、全局搜索、Git 集成、内置终端、编译运行任务、JDT 语言服务、GBK/UTF-8 编码自动识别等能力，并内置 SQL / Markdown / JSON / Properties 增强高亮与 Markdown 实时预览。
 
 ## 功能特性
 
@@ -17,9 +17,14 @@
 - **快速打开**：`Ctrl+P` 模糊匹配项目内文件（按相关性打分排序）
 - **全局搜索**：`Ctrl+Shift+F` 全文搜索，结果按文件分组，点击跳转
 - **Git 集成**：状态查看、暂存/丢弃、提交、分支管理、合并、拉取/推送/获取、diff 查看（工作区/暂存区/历史）、提交历史浏览
+- **内置终端**：基于 node-pty + xterm.js 的多标签终端（`Ctrl+\`` 开关），配色跟随外壳主题（浅色白底黑字 / 深色黑底白字）
+- **编译运行**：配置 bat/ps1 脚本一键执行，支持系统级与项目级配置；项目级可配置多个编译/运行脚本（执行时弹窗选择），编译并运行按序链式执行全部脚本；输出面板实时展示带退出码的任务日志，自动处理 UTF-8 无 BOM 脚本的 GBK 转码
+- **Java 语言服务（JDT LS）**：集成 Eclipse JDT Language Server，提供跳转定义、引用查找（右侧引用面板）、诊断等代码智能能力，通过 `npm run fetch:jdtls` 下载
+- **查找替换**：`Ctrl+H` 替换面板，支持大小写/全字/正则匹配
+- **右键菜单**：文件树与编辑区自绘上下文菜单（新建/重命名/删除/复制路径等文件操作）
 - **编码自动识别**：UTF-8 严格校验失败自动回退 GBK，保存时按原编码写回，状态栏显示当前编码
 - **会话恢复**：启动时自动恢复上次打开的项目和标签页
-- **本地配置**：主题/字体/配置目录可自定义，最近项目列表（最多 10 条）
+- **本地配置**：主题/字体/配置目录可自定义，最近项目列表（最多 10 条）；设置面板分栏布局（基础配置/编辑器/代码智能/编译运行）
 - **状态栏**：光标位置、总行数、文件编码、路径面包屑、Git 分支
 
 ## 技术栈
@@ -30,9 +35,11 @@
 | Vite | 5.x | 渲染进程构建与开发服务器 |
 | TypeScript | 5.3 | 开发语言（主/渲染进程强类型） |
 | Monaco Editor | 0.45 | 代码编辑器内核 |
+| node-pty | 1.x | 内置终端伪终端进程 |
+| xterm.js | 5.x | 内置终端渲染（含 fit / web-links 插件） |
+| split.js | 1.x | 分栏拖拽布局 |
 | iconv-lite | 0.7 | GBK 编解码 |
 | marked | 18.x | Markdown 渲染（GFM） |
-| koffi | 3.x | Windows DWM API 调用（自绘标题栏主题同步） |
 | electron-builder | 24.x | 生产打包（NSIS + Portable） |
 
 ## 目录结构
@@ -47,20 +54,26 @@ src/
 │   ├── ipc-handlers.ts     # IPC 请求处理注册
 │   ├── menu-service.ts     # 自定义菜单栏模型与动作表
 │   ├── file-service.ts     # 目录扫描、文件读写
+│   ├── file-ops.ts         # 文件操作（新建/重命名/删除）
 │   ├── encoding.ts         # UTF-8/GBK 自动识别与编码回写
 │   ├── search-service.ts   # 快速打开文件列表、全局搜索
 │   ├── index-service.ts    # Java 符号解析（类/方法/字段）
 │   ├── git-service.ts      # Git 操作（状态/提交/分支/diff/日志）
+│   ├── terminal-service.ts # 内置终端（node-pty 会话管理）
+│   ├── task-service.ts     # 编译运行任务（bat/ps1 执行、GBK 转码）
+│   ├── lsp/                # JDT 语言服务（client/connection/java-server/protocol）
 │   └── config-service.ts   # 本地配置：settings/ 与 history/ 分文件夹存储
 └── renderer/               # 渲染进程
     ├── index.ts            # 入口：组件装配、快捷键、会话恢复
     ├── index.html          # 页面骨架（标题栏/活动栏/侧边栏/编辑区/状态栏）
     ├── components/         # TitleBar / EditorPane / FileTree / OutlinePanel /
-    │                       # QuickOpen / SearchPanel / SettingsPanel / GitPanel /
-    │                       # DiffViewer / MarkdownPreview
+    │                       # QuickOpen / SearchPanel / ReplacePanel / SettingsPanel /
+    │                       # GitPanel / DiffViewer / MarkdownPreview / ContextMenu /
+    │                       # TerminalPanel / TaskPanel / ScriptPicker / ReferencesPanel
     ├── services/           # monaco（统一导出）、java-language（高亮+折叠）、
     │                       # sql-language / json-language / markdown-language /
-    │                       # properties-language / icons（文件图标）
+    │                       # properties-language / icons（文件图标）、
+    │                       # lsp-client / command-service
     └── styles/main.css     # 全局样式（暗色/浅色主题）
 ```
 
@@ -76,6 +89,9 @@ src/
 ```bash
 npm install
 npm run electron:dev
+
+# （可选）下载 JDT 语言服务（约 200MB，启用 Java 代码智能）
+npm run fetch:jdtls
 ```
 
 Vite 开发服务器监听 `http://localhost:5173`，Electron 自动加载并打开 DevTools。
@@ -111,10 +127,14 @@ npm run icon   # 生成 build/icon.ico（256x256 墨滴图案）
 | `Ctrl+O` | 打开项目 |
 | `Ctrl+P` | 快速打开文件 |
 | `Ctrl+Shift+F` | 全局搜索 |
+| `Ctrl+H` | 替换 |
 | `Ctrl+S` | 保存当前文件 |
 | `Ctrl+,` | 设置 |
+| `Ctrl+\`` | 内置终端开关 |
+| `Ctrl+Shift+B` | 编译 |
+| `F5` | 运行 |
+| `Ctrl+F5` | 编译并运行 |
 | `Ctrl+Shift+V` | Markdown 纯编辑 / 双栏 / 纯预览模式循环切换 |
-| `F5` | Git 面板刷新 |
 
 ## 本地配置存储
 
@@ -123,7 +143,8 @@ npm run icon   # 生成 build/icon.ico（256x256 墨滴图案）
 ```
 <配置根目录>/
 ├── settings/
-│   └── editor.json           # 主题、字体大小、配置目录
+│   ├── editor.json           # 主题、字体大小、配置目录
+│   └── tasks.json            # 编译运行脚本配置（系统级 + 项目级多脚本）
 └── history/
     ├── recent-projects.json  # 最近项目（最多 10 条）
     └── session.json          # 会话状态（项目 + 打开的标签页）
@@ -135,4 +156,6 @@ npm run icon   # 生成 build/icon.ico（256x256 墨滴图案）
 - `electron-builder` 的 `build.files` 白名单已显式包含 `node_modules/iconv-lite/**` 与 `node_modules/safer-buffer/**`，新增主进程运行时依赖时须同步加入
 - 全局搜索限制：单文件 ≤1MB、最多返回 500 条匹配、最多遍历 20000 个文件，自动跳过 `node_modules`、`.git`、`target` 等目录
 - Git 功能依赖系统安装的 `git` 命令行工具，不引入额外 Node.js Git 库
-- 自绘标题栏通过 `koffi` 调用 Windows DWM API 实现主题同步，仅 Windows 平台生效
+- 自绘标题栏采用 `titleBarStyle:'hidden'` + `titleBarOverlay` 方案（原生窗口按钮 overlay），标题栏中部为编译运行快捷按钮
+- 内置终端依赖 node-pty 原生模块，electron-builder 打包时需在 `build.files` 白名单中包含其产物
+- JDT 语言服务不随包分发，需执行 `npm run fetch:jdtls` 下载到 `resources/jdtls/`（已加入 .gitignore）

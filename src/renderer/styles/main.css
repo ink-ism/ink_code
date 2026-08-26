@@ -114,6 +114,22 @@ html, body {
   overflow: hidden;
 }
 
+/* 主内容区：上半区（侧边栏 + 编辑区 + 引用面板）+ 底部终端，不含活动栏 */
+#main-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+}
+
+#main-area-row {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+  overflow: hidden;
+}
+
 /* ============ 活动栏（左侧窄图标条） ============ */
 #activity-bar {
   width: 44px;
@@ -189,6 +205,11 @@ html, body {
 body.resizing {
   user-select: none;
   cursor: col-resize;
+}
+
+body.resizing-y {
+  user-select: none;
+  cursor: ns-resize;
 }
 
 #file-tree-container {
@@ -897,8 +918,10 @@ body.resizing {
 }
 
 .settings-dialog {
-  width: 480px;
-  max-width: 90vw;
+  width: 780px;
+  max-width: 92vw;
+  height: 560px;
+  max-height: 85vh;
   background-color: var(--bg-elevated);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-l);
@@ -915,11 +938,82 @@ body.resizing {
   border-bottom: 1px solid var(--border);
 }
 
-.settings-body {
-  padding: 18px;
+/* 左侧分类菜单 + 右侧设置内容 */
+.settings-layout {
   display: flex;
-  flex-direction: column;
-  gap: 16px;
+  flex: 1;
+  min-height: 0;
+}
+
+.settings-nav {
+  width: 172px;
+  flex-shrink: 0;
+  padding: 10px 8px;
+  border-right: 1px solid var(--border);
+  background-color: var(--bg-base);
+  border-radius: 0 0 0 var(--radius-l);
+  overflow-y: auto;
+}
+
+.settings-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 12px;
+  margin-bottom: 2px;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-s);
+  color: var(--text-muted);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.12s, color 0.12s;
+}
+
+.settings-nav-item:hover {
+  background-color: var(--bg-hover);
+  color: var(--text);
+}
+
+.settings-nav-item.active {
+  background-color: var(--accent-dim);
+  color: var(--text-bright);
+  font-weight: 600;
+}
+
+.settings-body {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+}
+
+/* 每个分区独占右侧内容区，仅激活分区可见 */
+.settings-section {
+  display: none;
+  padding: 18px;
+}
+
+.settings-section.active {
+  display: block;
+}
+
+.settings-section-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-bright);
+  margin-bottom: 16px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.settings-field {
+  margin-bottom: 16px;
+}
+
+.settings-field:last-child {
+  margin-bottom: 0;
 }
 
 .settings-field label {
@@ -1693,6 +1787,7 @@ body.resizing {
    自绘标题栏（原生标题栏隐藏 + 右上角原生窗口按钮 overlay）
    ============================================================ */
 #title-bar {
+  position: relative;          /* 中部编译运行按钮组的定位基准 */
   height: 36px;
   flex: none;
   display: flex;
@@ -1724,6 +1819,32 @@ body.resizing {
   display: flex;
   align-items: stretch;
   -webkit-app-region: no-drag;
+}
+
+/* 标题栏中部编译运行按钮组（水平居中，无边框底色） */
+#tb-task-actions {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  height: 100%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  -webkit-app-region: no-drag;
+}
+
+/* 去掉 mode-switch 默认的边框与底色，加大按钮间距 */
+#tb-task-actions .mode-switch {
+  background: transparent;
+  border: none;
+  padding: 0;
+  gap: 12px;
+}
+
+/* 适配 36px 标题栏高度：按钮略缩小 */
+#tb-task-actions .mode-btn {
+  width: 24px;
+  height: 24px;
 }
 
 .tb-menu-btn {
@@ -1811,4 +1932,717 @@ body.resizing {
 
 .tb-item.has-sub:hover > .tb-sub {
   display: block;
+}
+
+/* ============================================================
+   终端面板
+   ============================================================ */
+#terminal-resizer {
+  height: 4px;
+  background: var(--border);
+  cursor: ns-resize;
+}
+
+#terminal-resizer:hover {
+  background: var(--accent);
+}
+
+/* display:flex 会覆盖 hidden 属性的默认 display:none，必须显式补上 */
+#terminal-resizer[hidden],
+#terminal-panel[hidden] {
+  display: none;
+}
+
+#terminal-panel {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-base);
+  border-top: 1px solid var(--border);
+  height: 250px;
+  flex-shrink: 0;
+}
+
+#terminal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 8px;
+  background: var(--bg-bar);
+  border-bottom: 1px solid var(--border);
+}
+
+#terminal-title {
+  font-size: 12px;
+  color: var(--text);
+}
+
+#terminal-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.terminal-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 2px 6px;
+  font-size: 14px;
+  border-radius: var(--radius-s);
+}
+
+.terminal-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+#terminal-tabs {
+  display: flex;
+  background: var(--bg-bar);
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+}
+
+.terminal-tab {
+  padding: 4px 12px;
+  font-size: 12px;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-right: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.terminal-tab:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.terminal-tab.active {
+  background: var(--bg-elevated);
+  color: var(--text);
+}
+
+.terminal-tab-close {
+  font-size: 10px;
+  opacity: 0.6;
+}
+
+.terminal-tab-close:hover {
+  opacity: 1;
+}
+
+#terminal-content {
+  flex: 1;
+  overflow: hidden;
+  padding: 8px;
+}
+
+/* ============================================================
+   任务输出面板（编译/运行）
+   ============================================================ */
+#task-resizer {
+  height: 4px;
+  background: var(--border);
+  cursor: ns-resize;
+}
+
+#task-resizer:hover {
+  background: var(--accent);
+}
+
+/* display:flex 会覆盖 hidden 属性的默认 display:none，必须显式补上 */
+#task-resizer[hidden],
+#task-panel[hidden] {
+  display: none;
+}
+
+#task-panel {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-base);
+  border-top: 1px solid var(--border);
+  height: 250px;
+  flex-shrink: 0;
+}
+
+#task-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 8px;
+  background: var(--bg-bar);
+  border-bottom: 1px solid var(--border);
+}
+
+#task-panel-title {
+  font-size: 12px;
+  color: var(--text);
+}
+
+#task-actions {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.terminal-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.terminal-btn:disabled:hover {
+  background: transparent;
+  color: var(--text-muted);
+}
+
+.task-btn-text {
+  font-size: 12px;
+}
+
+#task-tabs {
+  display: flex;
+  background: var(--bg-bar);
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+}
+
+.task-tab {
+  padding: 4px 12px;
+  font-size: 12px;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-right: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.task-tab:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.task-tab.active {
+  background: var(--bg-elevated);
+  color: var(--text);
+}
+
+/* 任务状态圆点：运行中呼吸闪烁，成功绿 / 失败红 / 已停止灰 */
+.task-tab-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--text-muted);
+}
+
+.task-tab.status-running .task-tab-dot {
+  background: var(--accent);
+  animation: task-pulse 1.2s ease-in-out infinite;
+}
+
+.task-tab.status-success .task-tab-dot {
+  background: #4caf50;
+}
+
+.task-tab.status-failed .task-tab-dot {
+  background: #e05252;
+}
+
+.task-tab.status-failed .task-tab-text {
+  color: #e05252;
+}
+
+@keyframes task-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+#task-output {
+  flex: 1;
+  overflow: auto;
+  padding: 8px 12px;
+  font-family: Consolas, 'Courier New', monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: var(--text);
+}
+
+/* ============================================================
+   脚本选择弹窗（多脚本时执行前选择）
+   ============================================================ */
+#script-picker-overlay {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1200;
+}
+
+#script-picker-overlay[hidden] {
+  display: none;
+}
+
+.script-picker-dialog {
+  width: 480px;
+  max-width: 90vw;
+  max-height: 70vh;
+  display: flex;
+  flex-direction: column;
+  background-color: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-l);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.6);
+}
+
+.script-picker-title {
+  padding: 12px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-bright);
+  border-bottom: 1px solid var(--border);
+}
+
+.script-picker-list {
+  overflow-y: auto;
+  padding: 6px;
+}
+
+.script-picker-item {
+  padding: 8px 12px;
+  border-radius: var(--radius-s);
+  cursor: pointer;
+}
+
+.script-picker-item.selected {
+  background-color: var(--accent-dim);
+}
+
+.script-picker-item-name {
+  font-size: 13px;
+  color: var(--text);
+}
+
+.script-picker-item.selected .script-picker-item-name {
+  color: var(--text-bright);
+  font-weight: 600;
+}
+
+.script-picker-item-path {
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--text-faint);
+  word-break: break-all;
+}
+
+.script-picker-footer {
+  padding: 8px 16px;
+  font-size: 11px;
+  color: var(--text-faint);
+  border-top: 1px solid var(--border);
+}
+
+/* ============================================================
+   设置面板：项目级多脚本列表
+   ============================================================ */
+.task-script-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.task-script-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.task-script-name {
+  width: 120px;
+  flex-shrink: 0;
+}
+
+.task-script-path {
+  flex: 1;
+  min-width: 0;
+}
+
+.task-script-row input {
+  padding: 6px 9px;
+  background-color: var(--bg-base);
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 12px;
+  outline: none;
+  transition: border-color 0.12s, box-shadow 0.12s;
+}
+
+/* 提高特异性覆盖 .settings-field input[type="text"] 的 width:100%，避免名称框拉满整行 */
+.task-script-row input.task-script-name {
+  width: 120px;
+}
+
+.task-script-row input.task-script-path {
+  width: auto;
+}
+
+.task-script-row input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-dim);
+}
+
+.task-script-row .settings-btn-secondary {
+  padding: 6px 10px;
+  flex-shrink: 0;
+}
+
+.task-script-add {
+  padding: 5px 12px;
+  font-size: 12px;
+}
+
+
+/* ============================================================
+   右键上下文菜单
+   ============================================================ */
+.context-menu {
+  position: fixed;
+  background: var(--dialog-bg);
+  border: 1px solid var(--dialog-border);
+  border-radius: var(--radius-s);
+  padding: 4px 0;
+  min-width: 160px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  z-index: 10000;
+}
+
+.context-menu-item {
+  padding: 6px 16px;
+  font-size: 12px;
+  color: var(--dialog-text);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.context-menu-item:hover {
+  background: var(--dialog-highlight);
+}
+
+.context-menu-item.disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.context-menu-separator {
+  height: 1px;
+  background: var(--dialog-border);
+  margin: 4px 8px;
+}
+
+.context-menu-submenu-arrow {
+  margin-left: auto;
+  font-size: 10px;
+}
+
+/* ============================================================
+   引用查找结果面板
+   ============================================================ */
+#references-panel {
+  display: flex;
+  flex-direction: column;
+  width: 320px;
+  min-width: 200px;
+  max-width: 640px;
+  flex-shrink: 0;
+  background: var(--bg-panel);
+  border-left: 1px solid var(--border);
+  overflow: hidden;
+}
+
+/* display:flex 会覆盖 hidden 属性的默认 display:none，必须显式补上 */
+#references-panel[hidden] {
+  display: none;
+}
+
+/* 引用面板拖拽分隔条 */
+#references-resizer {
+  width: 3px;
+  cursor: col-resize;
+  background-color: transparent;
+  flex-shrink: 0;
+  transition: background-color 0.15s;
+}
+
+#references-resizer:hover,
+#references-resizer.dragging {
+  background-color: var(--accent);
+}
+
+#references-resizer[hidden] {
+  display: none;
+}
+
+.references-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  background: var(--bg-bar);
+  border-bottom: 1px solid var(--border);
+}
+
+.references-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px;
+}
+
+.references-group {
+  margin-bottom: 12px;
+}
+
+.references-file {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-bright);
+  padding: 4px 8px;
+  background: var(--bg-hover);
+  border-radius: var(--radius-s);
+  margin-bottom: 4px;
+}
+
+.references-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px 4px 20px;
+  font-size: 12px;
+  cursor: pointer;
+  border-radius: var(--radius-s);
+}
+
+.references-row:hover {
+  background: var(--bg-hover);
+}
+
+.references-line {
+  color: var(--text-muted);
+  min-width: 50px;
+}
+
+.references-context {
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.references-empty {
+  text-align: center;
+  padding: 20px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+/* ============================================================
+   搜索替换面板
+   ============================================================ */
+#search-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 100px;
+  z-index: 9000;
+}
+
+.search-dialog {
+  background: var(--dialog-bg);
+  border: 1px solid var(--dialog-border);
+  border-radius: var(--radius-m);
+  width: 500px;
+  max-width: 90vw;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.search-header {
+  padding: 12px 16px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--dialog-text);
+  border-bottom: 1px solid var(--dialog-border);
+}
+
+.search-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+}
+
+.search-input {
+  flex: 1;
+  background: var(--dialog-input);
+  border: 1px solid var(--dialog-border);
+  border-radius: var(--radius-s);
+  padding: 6px 10px;
+  font-size: 13px;
+  color: var(--dialog-text);
+}
+
+.search-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.search-toggles {
+  display: flex;
+  gap: 4px;
+}
+
+.search-toggle-btn {
+  background: var(--dialog-input);
+  border: 1px solid var(--dialog-border);
+  border-radius: var(--radius-s);
+  padding: 4px 8px;
+  font-size: 12px;
+  color: var(--dialog-text);
+  cursor: pointer;
+}
+
+.search-toggle-btn:hover {
+  background: var(--bg-hover);
+}
+
+.search-toggle-btn.active {
+  background: var(--accent);
+  color: var(--on-accent);
+  border-color: var(--accent);
+}
+
+.search-replace-btns {
+  display: flex;
+  gap: 4px;
+}
+
+.search-btn {
+  background: var(--accent);
+  border: none;
+  border-radius: var(--radius-s);
+  padding: 6px 12px;
+  font-size: 12px;
+  color: var(--on-accent);
+  cursor: pointer;
+}
+
+.search-btn:hover {
+  opacity: 0.9;
+}
+
+.search-status {
+  padding: 8px 16px;
+  font-size: 12px;
+  color: var(--dialog-muted);
+  border-top: 1px solid var(--dialog-border);
+}
+
+.search-results {
+  max-height: 300px;
+  overflow-y: auto;
+  padding: 8px 0;
+}
+
+.search-group {
+  margin-bottom: 8px;
+}
+
+.search-group-title {
+  padding: 4px 16px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--dialog-group-text);
+  background: var(--dialog-group-bg);
+}
+
+.search-match {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 16px 4px 24px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.search-match:hover {
+  background: var(--dialog-highlight);
+}
+
+.search-match-line {
+  color: var(--dialog-muted);
+  min-width: 40px;
+}
+
+.search-match-text {
+  color: var(--dialog-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ============================================================
+   设置面板扩展
+   ============================================================ */
+.settings-checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.settings-checkbox-label input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+/* ============================================================
+   文件树内联编辑
+   ============================================================ */
+.tree-inline-input {
+  background: var(--dialog-input);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-s);
+  padding: 2px 6px;
+  font-size: 12px;
+  color: var(--dialog-text);
+  width: 100%;
+  max-width: 200px;
+}
+
+.tree-inline-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-dim);
+}
+
+/* 拖拽高亮 */
+.tree-node.drag-over > .tree-row {
+  background: var(--accent-dim);
+  outline: 1px dashed var(--accent);
 }

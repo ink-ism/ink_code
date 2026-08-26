@@ -116,11 +116,44 @@ export async function createMenu(): Promise<void> {
   menuActions['minimize'] = () => getWin()?.minimize();
   menuActions['close'] = () => getWin()?.close();
 
+  // 文件操作：新建文件/文件夹（通知渲染进程）
+  menuActions['new-file'] = () => {
+    const win = getWin();
+    if (win) win.webContents.send(MAIN_EVENTS.MENU_ACTION, 'new-file');
+  };
+  menuActions['new-folder'] = () => {
+    const win = getWin();
+    if (win) win.webContents.send(MAIN_EVENTS.MENU_ACTION, 'new-folder');
+  };
+  menuActions['save-all'] = () => {
+    const win = getWin();
+    if (win) win.webContents.send(MAIN_EVENTS.MENU_ACTION, 'save-all');
+  };
+  menuActions['toggle-terminal'] = () => {
+    const win = getWin();
+    if (win) win.webContents.send(MAIN_EVENTS.MENU_ACTION, 'toggle-terminal');
+  };
+  menuActions['search-replace'] = () => {
+    const win = getWin();
+    if (win) win.webContents.send(MAIN_EVENTS.MENU_ACTION, 'search-replace');
+  };
+  // 编译运行任务（交由渲染进程执行，主进程只转发）
+  for (const action of ['task-build', 'task-run', 'task-build-run', 'task-settings']) {
+    menuActions[action] = () => {
+      const win = getWin();
+      if (win) win.webContents.send(MAIN_EVENTS.MENU_ACTION, action);
+    };
+  }
+
   menuModel = [
     {
       label: '文件',
       submenu: [
+        { id: 'new-file', label: '新建文件', accelerator: 'CmdOrCtrl+N' },
+        { id: 'new-folder', label: '新建文件夹' },
+        { separator: true },
         { id: 'settings', label: '设置', accelerator: 'CmdOrCtrl+,' },
+        { id: 'save-all', label: '全部保存', accelerator: 'CmdOrCtrl+Shift+S' },
         { separator: true },
         { id: 'quit', role: 'quit', label: '退出' }
       ]
@@ -146,9 +179,21 @@ export async function createMenu(): Promise<void> {
       ]
     },
     {
+      label: '运行',
+      submenu: [
+        { id: 'task-build', label: '编译', accelerator: 'CmdOrCtrl+Shift+B' },
+        { id: 'task-run', label: '运行', accelerator: 'F5' },
+        { id: 'task-build-run', label: '编译并运行', accelerator: 'CmdOrCtrl+F5' },
+        { separator: true },
+        { id: 'task-settings', label: '配置脚本…' }
+      ]
+    },
+    {
       label: '视图',
       submenu: [
         { id: 'reload', role: 'reload', label: '重新加载' },
+        { separator: true },
+        { id: 'toggle-terminal', label: '切换终端', accelerator: 'CmdOrCtrl+`' },
         { separator: true },
         { id: 'resetZoom', role: 'resetZoom', label: '重置缩放' },
         { id: 'zoomIn', role: 'zoomIn', label: '放大' },

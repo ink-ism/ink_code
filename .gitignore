@@ -3,3 +3,5 @@ dist/
 release/
 tmp/
 *.log
+# 内置 JDT LS（约 200MB，由 npm run fetch:jdtls 下载）
+resources/jdtls/

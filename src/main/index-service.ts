@@ -164,6 +164,28 @@ export function clearCache(filePath?: string) {
 }
 
 /**
+ * 按符号名在已索引文件中查找定义（LSP 不可用时的降级方案）
+ */
+export function findSymbolsByName(name: string): Array<{ file: string; symbol: FileSymbol }> {
+  const results: Array<{ file: string; symbol: FileSymbol }> = [];
+  for (const [file, symbols] of symbolCache) {
+    for (const s of symbols) {
+      if (s.name === name) {
+        results.push({ file, symbol: s });
+      }
+    }
+  }
+  return results;
+}
+
+/**
+ * 获取已索引文件路径列表（降级引用扫描用）
+ */
+export function getCachedFilePaths(): string[] {
+  return Array.from(symbolCache.keys());
+}
+
+/**
  * 索引整个项目（递归扫描所有 .java 文件）
  */
 export async function indexProject(projectPath: string): Promise<Map<string, FileSymbol[]>> {
