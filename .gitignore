@@ -5,3 +5,6 @@ tmp/
 *.log
 # 内置 JDT LS（约 200MB，由 npm run fetch:jdtls 下载）
 resources/jdtls/
+# 1.2.0 起安装包超过 GitHub 100MB 单文件限制，仅本地归档不入库
+package/setup/InkCode Setup 1.2.0.exe
+package/便携版/InkCode 1.2.0.exe
