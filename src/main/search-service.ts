@@ -1,6 +1,7 @@
-import { readdir, stat, readFile } from 'fs/promises';
+import { readdir, stat, readFile, writeFile } from 'fs/promises';
 import { join, extname, relative } from 'path';
 import { decodeBuffer } from './encoding';
+import type { SearchReplaceOptions, SearchReplaceResult } from '../common/types';
 
 // 跳过的目录
 const SKIP_DIRS = new Set(['node_modules', '.git', 'target', 'dist', 'build', '.idea', '.gradle', 'out', '.vscode', '.settings']);
@@ -58,6 +59,70 @@ export async function listAllFiles(root: string): Promise<string[]> {
   return results;
 }
 
+/**
+ * 全局搜索替换
+ */
+export async function replaceInProject(root: string, options: SearchReplaceOptions): Promise<SearchReplaceResult[]> {
+  const results: SearchReplaceResult[] = [];
+  if (!options.query) return results;
+
+  // 构建匹配模式
+  let pattern: RegExp;
+  try {
+    if (options.isRegex) {
+      const flags = options.caseSensitive ? 'g' : 'gi';
+      pattern = new RegExp(options.query, flags);
+    } else {
+      const escaped = options.query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const q = options.wholeWord ? `\\b${escaped}\\b` : escaped;
+      const flags = options.caseSensitive ? 'g' : 'gi';
+      pattern = new RegExp(q, flags);
+    }
+  } catch {
+    return results;
+  }
+
+  async function walk(dir: string) {
+    let entries;
+    try {
+      entries = await readdir(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (!SKIP_DIRS.has(entry.name) && !entry.name.startsWith('.')) {
+          await walk(full);
+        }
+      } else if (TEXT_EXTS.has(extname(entry.name).toLowerCase())) {
+        try {
+          const st = await stat(full);
+          if (st.size > MAX_FILE_SIZE) continue;
+          const buf = await readFile(full);
+          const { content } = decodeBuffer(buf, full);
+          pattern.lastIndex = 0;
+          if (!pattern.test(content)) continue;
+          pattern.lastIndex = 0;
+          const newContent = content.replace(pattern, options.replacement);
+          await writeFile(full, newContent, 'utf-8');
+          // 计算替换次数
+          pattern.lastIndex = 0;
+          const matches = content.match(pattern);
+          results.push({
+            file: full,
+            count: matches ? matches.length : 0
+          });
+        } catch {
+          // 忽略读写失败的文件
+        }
+      }
+    }
+  }
+
+  await walk(root);
+  return results;
+}
 /**
  * 跨文件搜索（包含匹配），返回匹配结果
  */

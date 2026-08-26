@@ -4,6 +4,9 @@ import { registerIpcHandlers } from './ipc-handlers';
 import { loadSettings } from './config-service';
 import { isLightTheme } from '../common/types';
 import { createMenu, titleBarOverlayOptions } from './menu-service';
+import { registerTerminalHandlers, destroyAllTerminals } from './terminal-service';
+import { registerTaskHandlers, destroyAllTasks } from './task-service';
+import { registerLspHandlers, stopLanguageServer } from './lsp/connection';
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -68,6 +71,9 @@ function createWindow() {
 
 app.whenReady().then(async () => {
   registerIpcHandlers();
+  registerTerminalHandlers();
+  registerTaskHandlers();
+  registerLspHandlers();
   await createMenu();
   // 创建窗口前读取配置，窗口底色 / 标题栏按钮配色与主题保持一致
   const startupSettings = await loadSettings();
@@ -84,6 +90,9 @@ app.whenReady().then(async () => {
 });
 
 app.on('window-all-closed', () => {
+  destroyAllTerminals();
+  destroyAllTasks();
+  void stopLanguageServer();
   if (process.platform !== 'darwin') {
     app.quit();
   }

@@ -14,7 +14,14 @@ import { MarkdownPreview } from './components/MarkdownPreview';
 import { GitPanel, GitDiffRequest } from './components/GitPanel';
 import { DiffViewer, detectLanguage } from './components/DiffViewer';
 import { TitleBar } from './components/TitleBar';
-import { FileTreeNode, FileSymbol, EditorSettings, SessionState, SearchMatch, GitLogEntry, GitStatusInfo, GitBranchInfo, GitCommitFile, GitDiffContent, GitDiffMode, MenuModelNode, isLightTheme } from '../common/types';
+import { ReplacePanel } from './components/ReplacePanel';
+import { TerminalPanel } from './components/TerminalPanel';
+import { TaskPanel } from './components/TaskPanel';
+import { ScriptPicker } from './components/ScriptPicker';
+import { ReferencesPanel, ReferenceItem } from './components/ReferencesPanel';
+import { registerLspProviders, notifyDidOpen, notifyDidChange, notifyDidClose, pathToUri, uriToPath } from './services/lsp-client';
+import { registerCommand, applyKeybindings } from './services/command-service';
+import { FileTreeNode, FileSymbol, EditorSettings, SessionState, SearchMatch, GitLogEntry, GitStatusInfo, GitBranchInfo, GitCommitFile, GitDiffContent, GitDiffMode, MenuModelNode, Keybinding, LspLocation, isLightTheme, TasksConfig, TaskKind, TaskFinishedInfo, TaskScriptEntry, TaskScriptConfig, ProjectTaskConfig } from '../common/types';
 
 // 类型声明
 declare global {
@@ -66,6 +73,52 @@ declare global {
       menuGetTemplate: () => Promise<MenuModelNode[]>;
       menuInvoke: (id: string) => Promise<{ success: boolean }>;
       onMenuUpdated: (callback: () => void) => void;
+      // 文件操作
+      createFile: (parentDir: string, name: string) => Promise<{ success: boolean; error?: string }>;
+      createFolder: (parentDir: string, name: string) => Promise<{ success: boolean; error?: string }>;
+      renameItem: (oldPath: string, newName: string) => Promise<{ success: boolean; error?: string }>;
+      deleteItem: (path: string) => Promise<{ success: boolean; error?: string }>;
+      copyItem: (srcPath: string, destDir: string) => Promise<{ success: boolean; error?: string }>;
+      cutItem: (srcPath: string, destDir: string) => Promise<{ success: boolean; error?: string }>;
+      pasteItem: (destDir: string) => Promise<{ success: boolean; error?: string }>;
+      // 搜索替换
+      searchReplace: (root: string, options: unknown) => Promise<{ success: boolean; results?: unknown[]; error?: string }>;
+      // 终端
+      terminalCreate: (options: unknown) => Promise<{ success: boolean; id?: string; error?: string }>;
+      terminalWrite: (id: string, data: string) => Promise<{ success: boolean; error?: string }>;
+      terminalResize: (id: string, cols: number, rows: number) => Promise<{ success: boolean; error?: string }>;
+      terminalDestroy: (id: string) => Promise<{ success: boolean; error?: string }>;
+      onTerminalData: (callback: (id: string, data: string) => void) => void;
+      // LSP
+      lspDefinition: (uri: string, line: number, character: number) => Promise<{ success: boolean; locations?: unknown; error?: string }>;
+      lspReferences: (uri: string, line: number, character: number) => Promise<{ success: boolean; locations?: unknown; error?: string }>;
+      lspHover: (uri: string, line: number, character: number) => Promise<{ success: boolean; hover?: unknown; error?: string }>;
+      lspFormat: (uri: string) => Promise<{ success: boolean; edits?: unknown; error?: string }>;
+      lspDidOpen: (uri: string, languageId: string, version: number, content: string) => Promise<{ success: boolean; error?: string }>;
+      lspDidChange: (uri: string, version: number, content: string) => Promise<{ success: boolean; error?: string }>;
+      lspDidClose: (uri: string) => Promise<{ success: boolean; error?: string }>;
+      lspStatus: () => Promise<{ success: boolean; status?: unknown; error?: string }>;
+      lspStart: (projectPath: string) => Promise<{ success: boolean; status?: unknown; error?: string }>;
+      onLspStatusChanged: (callback: (status: unknown) => void) => void;
+      // 键盘映射
+      getKeybindings: () => Promise<{ success: boolean; keybindings?: Keybinding[]; error?: string }>;
+      saveKeybindings: (keybindings: unknown) => Promise<{ success: boolean; error?: string }>;
+      // 编译运行任务
+      getTasksConfig: () => Promise<{ success: boolean; config?: TasksConfig; error?: string }>;
+      saveTasksConfig: (config: TasksConfig) => Promise<{ success: boolean; error?: string }>;
+      browseFile: () => Promise<string | null>;
+      taskRun: (options: unknown) => Promise<{ success: boolean; taskId?: string; error?: string }>;
+      taskStop: (taskId: string) => Promise<{ success: boolean; error?: string }>;
+      onTaskOutput: (callback: (taskId: string, text: string) => void) => void;
+      onTaskFinished: (callback: (info: TaskFinishedInfo) => void) => void;
+      // 编码切换
+      readFileWithEncoding: (filePath: string, encoding: string) => Promise<{ success: boolean; content?: string; error?: string }>;
+      setFileEncoding: (filePath: string, encoding: string) => Promise<{ success: boolean; error?: string }>;
+      // 事件监听
+      onFileChanged: (callback: (filePath: string) => void) => void;
+      onMenuAction: (callback: (action: string) => void) => void;
+      watchFile: (filePath: string) => Promise<{ success: boolean; error?: string }>;
+      unwatchFile: (filePath: string) => Promise<{ success: boolean; error?: string }>;
     };
   }
 }
@@ -85,6 +138,13 @@ let diffViewer: DiffViewer | null = null;
 let gitPollTimer: number | undefined;
 let mdMode: MdMode = 'edit';
 let mdRenderTimer: number | undefined;
+let replacePanel: ReplacePanel | null = null;
+let terminalPanel: TerminalPanel | null = null;
+let taskPanel: TaskPanel | null = null;
+let scriptPicker: ScriptPicker | null = null;
+let referencesPanel: ReferencesPanel | null = null;
+let currentSettings: EditorSettings | null = null;
+let watchedFilePath: string | null = null;
 // 大文件保护：超过该大小不创建 TextModel，避免单文件内存爆张
 const MAX_OPEN_FILE_SIZE = 5 * 1024 * 1024;
 // 滚动同步锁：防止编辑器 <-> 预览互相触发形成回环
@@ -106,6 +166,7 @@ async function init() {
     const settingsResult = await window.electronAPI.getSettings();
     if (settingsResult.success && settingsResult.settings) {
       settings = settingsResult.settings;
+      currentSettings = settings;
     }
   } catch (error) {
     console.error('加载配置失败:', error);
@@ -129,12 +190,33 @@ async function init() {
     document.getElementById('editor')!,
     { theme: settings?.theme, fontSize: settings?.fontSize }
   );
+
+  // 应用编辑器设置
+  if (settings) {
+    editorPane.setAutoSave(settings.autoSave ?? 'off', settings.autoSaveDelay ?? 1000);
+    editorPane.setTabSize(settings.tabSize ?? 4);
+    editorPane.setWordWrap(settings.wordWrap ?? 'off');
+    editorPane.setMinimap(settings.minimap !== false);
+  }
+
   editorPane.onFileChange = async (filePath: string) => {
     updateBreadcrumb(filePath);
     updateLineCount();
     syncPreviewUI();
     await updateOutline(filePath);
     saveSessionDebounced();
+    // 注册外部变更监听（切换文件时替换 watcher）
+    if (watchedFilePath && watchedFilePath !== filePath) {
+      void window.electronAPI.unwatchFile(watchedFilePath);
+    }
+    void window.electronAPI.watchFile(filePath);
+    watchedFilePath = filePath;
+  };
+
+  // 跨文件跳转（Ctrl+Click / F12 到其他文件）
+  editorPane.onOpenFileRequest = async (filePath: string, line?: number) => {
+    await openFile(filePath);
+    if (line) editorPane?.goToLine(line);
   };
   editorPane.onAllClosed = () => {
     updateBreadcrumb(null);
@@ -143,6 +225,10 @@ async function init() {
   };
   editorPane.onTabsChange = () => {
     saveSessionDebounced();
+  };
+  // tab 关闭时通知 LSP 释放文档（避免陈旧内容影响跳转/诊断）
+  editorPane.onCloseFile = (filePath: string) => {
+    notifyDidClose(filePath);
   };
   editorPane.onCursorChange = (line: number, column: number) => {
     document.getElementById('status-cursor')!.textContent = `Ln ${line}, Col ${column}`;
@@ -167,6 +253,13 @@ async function init() {
 
   // Markdown 实时预览：内容变化防抖刷新（非纯编辑模式且为 md 文件时）
   editorPane.onContentChange = () => {
+    // 通知 LSP 文档变更
+    const filePath = editorPane?.getActiveFilePath();
+    if (filePath) {
+      const content = editorPane?.getContent() || '';
+      notifyDidChange(filePath, content);
+    }
+
     if (mdMode === 'edit') return;
     if (editorPane?.getActiveLanguage() !== 'markdown') return;
     // 防抖 200ms：避免每次击键都全量 getValue + 解析 + innerHTML
@@ -223,9 +316,14 @@ async function init() {
 
   // 设置面板：保存后应用主题和字体
   settingsPanel = new SettingsPanel((newSettings) => {
+    currentSettings = newSettings;
     applyUiTheme(newSettings.theme);
     editorPane?.setTheme(newSettings.theme);
     editorPane?.setFontSize(newSettings.fontSize);
+    editorPane?.setAutoSave(newSettings.autoSave ?? 'off', newSettings.autoSaveDelay ?? 1000);
+    editorPane?.setTabSize(newSettings.tabSize ?? 4);
+    editorPane?.setWordWrap(newSettings.wordWrap ?? 'off');
+    editorPane?.setMinimap(newSettings.minimap !== false);
   });
 
   // 监听菜单栏 文件 -> 设置 事件
@@ -251,26 +349,241 @@ async function init() {
     editorPane?.goToLine(line);
   });
 
+  // 全局搜索替换（Ctrl+H）
+  replacePanel = new ReplacePanel(async (file, line) => {
+    await openFile(file);
+    editorPane?.goToLine(line);
+  });
+
+  // 终端面板
+  terminalPanel = new TerminalPanel(
+    document.getElementById('terminal-panel')!,
+    document.getElementById('terminal-content')!,
+    document.getElementById('terminal-tabs')!,
+    currentProjectPath || undefined
+  );
+  // 补同步终端配色（applyUiTheme 先于本实例创建执行，默认值为深色）
+  terminalPanel.setTheme(isLightTheme(settings?.theme) ? 'light' : 'dark');
+
+  // 引用查找结果面板
+  referencesPanel = new ReferencesPanel(
+    document.getElementById('references-panel')!,
+    async (filePath, line) => {
+      await openFile(filePath);
+      editorPane?.goToLine(line);
+    }
+  );
+  // 面板隐藏（✕ 按钮）时同步活动栏引用按钮状态
+  referencesPanel.onHide = () => {
+    document.getElementById('btn-references')?.classList.remove('active');
+  };
+  initReferencesResizer();
+
+  // 任务输出面板（编译/运行）
+  taskPanel = new TaskPanel(document.getElementById('task-panel')!);
+  scriptPicker = new ScriptPicker();
+  taskPanel.onStop = (taskId) => {
+    void window.electronAPI.taskStop(taskId);
+  };
+  // 面板内 ✕ 关闭时同步活动栏按钮高亮
+  taskPanel.onClose = () => {
+    document.getElementById('btn-task-output')?.classList.remove('active');
+  };
+  window.electronAPI.onTaskOutput((taskId, text) => {
+    taskPanel?.appendOutput(taskId, text);
+  });
+  window.electronAPI.onTaskFinished((info) => {
+    taskPanel?.finishTask(info.taskId, info.exitCode, info.killed);
+    // 唤醒等待方（编译并运行链式执行）；无等待方则暂存结果防竞态丢失
+    const resolver = taskFinishWaiters.get(info.taskId);
+    if (resolver) {
+      taskFinishWaiters.delete(info.taskId);
+      resolver(info.exitCode);
+    } else {
+      taskFinishedCodes.set(info.taskId, info.exitCode);
+    }
+  });
+
+  // 注册 LSP Provider
+  registerLspProviders();
+
+  // 加载并应用键盘映射
+  try {
+    const kbResult = await window.electronAPI.getKeybindings();
+    if (kbResult.success && kbResult.keybindings) {
+      applyKeybindings(kbResult.keybindings);
+    }
+  } catch (e) {
+    console.warn('加载键盘映射失败:', e);
+  }
+
+  // 注册命令处理器
+  registerCommand('file.save', () => {
+    editorPane?.saveActiveFile();
+  });
+  registerCommand('file.saveAll', () => {
+    editorPane?.saveAllFiles();
+  });
+  registerCommand('view.toggleTerminal', () => {
+    toggleTerminalPanel();
+  });
+  registerCommand('search.replace', () => {
+    replacePanel?.show();
+  });
+  registerCommand('task.build', () => {
+    void runTaskKind('build');
+  });
+  registerCommand('task.run', () => {
+    void runTaskKind('run');
+  });
+  registerCommand('task.buildRun', () => {
+    void runBuildThenRun();
+  });
+
+  // 查找光标处符号的引用（Shift+F12 / 活动栏引用按钮）
+  async function findReferencesAtCursor(): Promise<boolean> {
+    const info = editorPane?.getCursorInfo();
+    if (!info || !info.word) {
+      alert('请先打开文件并将光标放在符号上');
+      return false;
+    }
+    const result = await window.electronAPI.lspReferences(
+      pathToUri(info.path), info.line, info.column
+    );
+    const locations = (result.success && result.locations) ? result.locations as LspLocation[] : [];
+    const items: ReferenceItem[] = locations.map(loc => ({
+      filePath: uriToPath(loc.uri),
+      line: loc.line,
+      character: loc.character
+    }));
+    referencesPanel?.show(items, info.word);
+    return true;
+  }
+
+  registerCommand('editor.findReferences', () => {
+    void findReferencesAtCursor();
+  });
+
+  // 活动栏引用按钮
+  document.getElementById('btn-references')?.addEventListener('click', async (e) => {
+    const btn = e.currentTarget as HTMLElement;
+    const panel = document.getElementById('references-panel')!;
+    if (!panel.hidden) {
+      referencesPanel?.hide();
+      btn.classList.remove('active');
+      return;
+    }
+    const shown = await findReferencesAtCursor();
+    btn.classList.toggle('active', shown);
+  });
+
   // 全局快捷键
   document.addEventListener('keydown', (e) => {
     const mod = e.ctrlKey || e.metaKey;
-    if (!mod) return;
-    if (!e.shiftKey && e.key.toLowerCase() === 'p') {
+    if (mod && !e.shiftKey && e.key.toLowerCase() === 'p') {
       e.preventDefault();
       quickOpen?.show();
-    } else if (e.shiftKey && e.key.toLowerCase() === 'f') {
+    } else if (mod && e.shiftKey && e.key.toLowerCase() === 'f') {
       e.preventDefault();
       searchPanel?.show();
-    } else if (e.shiftKey && e.key.toLowerCase() === 'v') {
+    } else if (mod && e.shiftKey && e.key.toLowerCase() === 'v') {
       e.preventDefault();
       cycleMdMode();
+    } else if (mod && e.shiftKey && e.key.toLowerCase() === 's') {
+      e.preventDefault();
+      editorPane?.saveAllFiles();
+    } else if (mod && e.shiftKey && e.key.toLowerCase() === 'h') {
+      e.preventDefault();
+      replacePanel?.show();
+    } else if (mod && e.key === '`') {
+      e.preventDefault();
+      toggleTerminalPanel();
     }
   }, true);
 
   console.log('[renderer] init 完成，监听已注册');
 
+  // 文件外部变更检测
+  window.electronAPI.onFileChanged(async (filePath) => {
+    if (!editorPane?.isFileOpen(filePath)) return;
+    if (editorPane?.isFileDirty(filePath)) {
+      const fileName = filePath.split(/[\\/]/).pop() || filePath;
+      if (confirm(`“${fileName}” 已被外部修改，是否重新加载？`)) {
+        await editorPane?.reloadFile(filePath);
+      }
+    } else {
+      await editorPane?.reloadFile(filePath);
+    }
+  });
+
+  // 菜单动作处理
+  window.electronAPI.onMenuAction(async (action) => {
+    switch (action) {
+      case 'new-file':
+        fileTree?.startInlineCreate(currentProjectPath);
+        break;
+      case 'new-folder':
+        fileTree?.startInlineCreate(currentProjectPath, true);
+        break;
+      case 'save-all':
+        editorPane?.saveAllFiles();
+        break;
+      case 'toggle-terminal':
+        toggleTerminalPanel();
+        break;
+      case 'search-replace':
+        replacePanel?.show();
+        break;
+      case 'task-build':
+        void runTaskKind('build');
+        break;
+      case 'task-run':
+        void runTaskKind('run');
+        break;
+      case 'task-build-run':
+        void runBuildThenRun();
+        break;
+      case 'task-settings':
+        void settingsPanel?.show('tasks');
+        break;
+    }
+  });
+
+  // 编译运行工具栏按钮
+  document.getElementById('btn-task-build')?.addEventListener('click', () => {
+    void runTaskKind('build');
+  });
+  document.getElementById('btn-task-run')?.addEventListener('click', () => {
+    void runTaskKind('run');
+  });
+  document.getElementById('btn-task-build-run')?.addEventListener('click', () => {
+    void runBuildThenRun();
+  });
+
+  // 编码切换：状态栏点击
+  const encodingEl = document.getElementById('status-encoding');
+  if (encodingEl) {
+    encodingEl.style.cursor = 'pointer';
+    encodingEl.addEventListener('click', () => {
+      const filePath = editorPane?.getActiveFilePath();
+      if (!filePath) return;
+      showEncodingMenu(filePath, encodingEl);
+    });
+  }
+
+  // 终端面板按钮
+  document.getElementById('btn-terminal-new')?.addEventListener('click', () => {
+    terminalPanel?.createNewTerminal(currentProjectPath || undefined);
+  });
+  document.getElementById('btn-terminal-close')?.addEventListener('click', () => {
+    toggleTerminalPanel(false);
+  });
+
   // 初始化侧边栏拖拽调整宽度
   initResizer();
+  // 底部面板拖拽调高（终端 / 任务输出面板共用逻辑）
+  initBottomResizer('terminal-resizer', 'terminal-panel', () => terminalPanel?.fitActive());
+  initBottomResizer('task-resizer', 'task-panel');
 
   // 恢复上次会话（项目 + 打开的 tab）
   try {
@@ -318,6 +631,45 @@ function initResizer() {
   // 双击恢复默认宽度
   resizer.addEventListener('dblclick', () => {
     sidebar.style.width = '280px';
+  });
+}
+
+// 引用面板拖拽调宽（面板在右侧，向左拖变宽）
+function initReferencesResizer() {
+  const resizer = document.getElementById('references-resizer');
+  const panel = document.getElementById('references-panel');
+  if (!resizer || !panel) return;
+  const MIN_WIDTH = 200;
+  const MAX_WIDTH = 640;
+
+  let isResizing = false;
+  // 面板右边缘，拖动开始时记录，避免宽度跳变
+  let panelRight = 0;
+
+  resizer.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    isResizing = true;
+    panelRight = panel.getBoundingClientRect().right;
+    resizer.classList.add('dragging');
+    document.body.classList.add('resizing');
+  });
+
+  document.addEventListener('mousemove', (e) => {
+    if (!isResizing) return;
+    const newWidth = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, panelRight - e.clientX));
+    panel.style.width = newWidth + 'px';
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (!isResizing) return;
+    isResizing = false;
+    resizer.classList.remove('dragging');
+    document.body.classList.remove('resizing');
+  });
+
+  // 双击恢复默认宽度
+  resizer.addEventListener('dblclick', () => {
+    panel.style.width = '';
   });
 }
 
@@ -375,6 +727,15 @@ function initActivityBar() {
     btn.classList.toggle('active', show);
   });
 
+  document.getElementById('btn-terminal')!.addEventListener('click', () => {
+    toggleTerminalPanel();
+  });
+
+  // 输出面板按钮（与终端面板互斥）
+  document.getElementById('btn-task-output')!.addEventListener('click', () => {
+    toggleTaskPanel();
+  });
+
   document.getElementById('btn-settings')!.addEventListener('click', () => {
     settingsPanel?.show();
   });
@@ -415,10 +776,24 @@ async function loadProject(dirPath: string, restore?: SessionState) {
   console.log('[loadProject] 加载项目:', dirPath);
 
   currentProjectPath = dirPath;
+  // 同步项目路径给设置面板（编译运行的项目级配置需要）
+  if (settingsPanel) {
+    settingsPanel.projectPath = dirPath;
+  }
   searchPanel?.setRoot(dirPath);
+  replacePanel?.setRoot(dirPath);
+  terminalPanel?.setCwd(dirPath);
   // 项目名显示在侧边栏标题位置
   document.getElementById('project-name')!.textContent = dirPath.split(/[/\\]/).pop() || dirPath;
   updateBreadcrumb(null);
+
+  // 启动 Language Server（后台异步，未安装 JDT LS 时自动降级为符号索引）
+  window.electronAPI.lspStart(dirPath).then(result => {
+    if (!result.success) {
+      const msg = (result.status as { message?: string } | undefined)?.message;
+      console.warn(`[LSP] 未启动，使用符号索引降级方案${msg ? `：${msg}` : ''}`);
+    }
+  }).catch(() => { /* 忽略 */ });
 
   // 切换项目后刷新 Git 面板（分支、变更、提交记录），并注册仓库变更监听
   gitPanel?.setProject(dirPath);
@@ -482,6 +857,12 @@ async function openFile(filePath: string) {
   const fileName = filePath.split(/[/\\]/).pop() || filePath;
   editorPane?.openFile(filePath, fileName, result.content);
   await updateOutline(filePath);
+
+  // 通知 LSP 文档打开
+  const languageId = getLanguageIdFromPath(filePath);
+  if (languageId) {
+    notifyDidOpen(filePath, languageId, result.content);
+  }
 }
 
 // 更新大纲
@@ -667,9 +1048,28 @@ function joinPath(root: string, rel: string): string {
   return root.replace(/[\\/]+$/, '') + '\\' + rel.replace(/\//g, '\\');
 }
 
+// 根据文件路径获取语言 ID
+function getLanguageIdFromPath(filePath: string): string | null {
+  const ext = filePath.split('.').pop()?.toLowerCase();
+  switch (ext) {
+    case 'java': return 'java';
+    case 'js': case 'mjs': return 'javascript';
+    case 'ts': case 'mts': return 'typescript';
+    case 'json': return 'json';
+    case 'md': return 'markdown';
+    case 'sql': return 'sql';
+    case 'properties': return 'properties';
+    case 'xml': case 'html': case 'htm': return 'xml';
+    default: return null;
+  }
+}
+
 // 同步外壳 UI 配色：通过 :root[data-theme] 切换 CSS 变量，与编辑器主题保持一致
 function applyUiTheme(theme: string | undefined) {
-  document.documentElement.setAttribute('data-theme', isLightTheme(theme) ? 'light' : 'dark');
+  const light = isLightTheme(theme);
+  document.documentElement.setAttribute('data-theme', light ? 'light' : 'dark');
+  // 终端配色跟随外壳主题（浅色白底黑字 / 深色黑底白字）
+  terminalPanel?.setTheme(light ? 'light' : 'dark');
 }
 
 // 防抖保存会话状态
@@ -683,6 +1083,280 @@ function saveSessionDebounced() {
       activeFile: state?.activeFile ?? null
     });
   }, 500);
+}
+
+// 底部面板拖拽调高（终端/输出面板共用：面板在底部，向上拖变高）
+function initBottomResizer(resizerId: string, panelId: string, onDrag?: () => void) {
+  const resizer = document.getElementById(resizerId);
+  const panel = document.getElementById(panelId);
+  if (!resizer || !panel) return;
+  const MIN_HEIGHT = 100;
+
+  let isResizing = false;
+  // 面板下边缘与最大高度，拖动开始时记录（限幅随窗口尺寸变化）
+  let panelBottom = 0;
+  let maxHeight = 0;
+
+  resizer.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    isResizing = true;
+    panelBottom = panel.getBoundingClientRect().bottom;
+    // 面板位于主内容区底部：最大高度 = 容器高度 - 保留给编辑器的最小空间
+    const containerHeight = panel.parentElement?.clientHeight ?? window.innerHeight;
+    maxHeight = Math.max(MIN_HEIGHT, containerHeight - 150);
+    document.body.classList.add('resizing-y');
+  });
+
+  document.addEventListener('mousemove', (e) => {
+    if (!isResizing) return;
+    const newHeight = Math.min(maxHeight, Math.max(MIN_HEIGHT, panelBottom - e.clientY));
+    panel.style.height = newHeight + 'px';
+    onDrag?.();
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (!isResizing) return;
+    isResizing = false;
+    document.body.classList.remove('resizing-y');
+  });
+
+  // 双击恢复默认高度
+  resizer.addEventListener('dblclick', () => {
+    panel.style.height = '';
+    onDrag?.();
+  });
+}
+
+// ============ 编译运行任务 ============
+
+// 任务结束等待表（编译并运行链式执行：等编译结束再运行）
+const taskFinishWaiters = new Map<string, (exitCode: number | null) => void>();
+// 无等待方时暂存的结束码（防止事件先于等待注册到达导致丢失）
+const taskFinishedCodes = new Map<string, number | null>();
+
+// 读取任务配置并按 项目级 > 系统级 逐字段合并，取指定类型的脚本路径
+// 归一化项目级配置为列表格式（兼容旧版单条 buildScript/runScript 格式）
+function normalizeProjectScripts(cfg: ProjectTaskConfig | TaskScriptConfig): { build: TaskScriptEntry[]; run: TaskScriptEntry[] } {
+  const next = cfg as ProjectTaskConfig;
+  if (Array.isArray(next.buildScripts) || Array.isArray(next.runScripts)) {
+    return {
+      build: (next.buildScripts || []).filter((e) => e && e.script && e.script.trim()),
+      run: (next.runScripts || []).filter((e) => e && e.script && e.script.trim())
+    };
+  }
+  const legacy = cfg as TaskScriptConfig;
+  return {
+    build: legacy.buildScript && legacy.buildScript.trim() ? [{ name: '', script: legacy.buildScript.trim() }] : [],
+    run: legacy.runScript && legacy.runScript.trim() ? [{ name: '', script: legacy.runScript.trim() }] : []
+  };
+}
+
+// 取指定类型的生效脚本列表：项目级列表非空优先，否则回退系统级单条
+async function getEffectiveTaskScripts(kind: TaskKind): Promise<TaskScriptEntry[]> {
+  const result = await window.electronAPI.getTasksConfig();
+  if (!result.success || !result.config) return [];
+  const cfg = result.config;
+  // 项目路径键大小写不敏感匹配（Windows 盘符大小写差异）
+  const key = currentProjectPath
+    ? Object.keys(cfg.projects).find(k => k.toLowerCase() === currentProjectPath!.toLowerCase())
+    : undefined;
+  const project = key ? cfg.projects[key] : undefined;
+  if (project) {
+    const lists = normalizeProjectScripts(project);
+    const list = kind === 'build' ? lists.build : lists.run;
+    if (list.length > 0) return list;
+  }
+  const field = kind === 'build' ? 'buildScript' : 'runScript';
+  const raw = (cfg.global[field] || '').trim();
+  return raw ? [{ name: '', script: raw }] : [];
+}
+
+// 条目展示名：优先配置的名称，为空时回退脚本文件名
+function entryDisplayName(entry: TaskScriptEntry): string {
+  if (entry.name && entry.name.trim()) return entry.name.trim();
+  return entry.script.split(/[\\/]/).pop() || entry.script;
+}
+
+// 解析脚本路径：绝对路径直接用，相对路径基于项目根拼接
+function resolveScriptPath(raw: string): string | null {
+  if (/^([a-zA-Z]:[\\/]|\\\\|\/)/.test(raw)) return raw;
+  if (!currentProjectPath) return null;
+  return `${currentProjectPath}\\${raw.replace(/^[\\/]+/, '')}`;
+}
+
+// 等待指定任务结束（兼容已结束的情况，先查暂存表）
+function waitForTaskFinish(taskId: string): Promise<number | null> {
+  if (taskFinishedCodes.has(taskId)) {
+    const code = taskFinishedCodes.get(taskId) ?? null;
+    taskFinishedCodes.delete(taskId);
+    return Promise.resolve(code);
+  }
+  return new Promise((resolve) => {
+    taskFinishWaiters.set(taskId, resolve);
+  });
+}
+
+// 启动单条脚本条目的任务，返回 taskId；启动失败时本地创建任务记录展示错误
+async function startTaskEntry(kind: TaskKind, entry: TaskScriptEntry, multiple: boolean): Promise<string | null> {
+  const scriptPath = resolveScriptPath(entry.script.trim());
+  if (!scriptPath) {
+    alert('脚本路径无效，请检查编译运行配置');
+    return null;
+  }
+  const kindLabel = kind === 'build' ? '编译' : '运行';
+  const time = new Date().toLocaleTimeString('zh-CN', { hour12: false });
+  // 多脚本时在标签中带上脚本名以便区分
+  const label = multiple ? `${kindLabel} ${entryDisplayName(entry)} @ ${time}` : `${kindLabel} @ ${time}`;
+
+  // 输出面板与终端面板互斥
+  toggleTaskPanel(true);
+
+  const res = await window.electronAPI.taskRun({ kind, scriptPath, cwd: currentProjectPath!, label });
+  if (!res.success || !res.taskId) {
+    // 启动失败：本地创建任务记录展示错误
+    const localId = `local-${Date.now()}`;
+    taskPanel?.addTask(localId, label, kind);
+    taskPanel?.failLocal(localId, res.error || '未知错误');
+    return null;
+  }
+  taskPanel?.addTask(res.taskId, label, kind);
+  return res.taskId;
+}
+
+// 执行单类任务（编译或运行）：多脚本时先弹窗选择；返回 taskId，未配置/取消返回 null
+async function runTaskKind(kind: TaskKind): Promise<string | null> {
+  if (!currentProjectPath) {
+    alert('请先打开项目');
+    return null;
+  }
+  const entries = await getEffectiveTaskScripts(kind);
+  if (entries.length === 0) {
+    // 未配置脚本：引导到设置面板的编译运行分区
+    void settingsPanel?.show('tasks');
+    return null;
+  }
+  let entry = entries[0];
+  if (entries.length > 1) {
+    const picked = await scriptPicker!.pick(kind === 'build' ? '编译' : '运行', entries, entryDisplayName);
+    if (!picked) return null;
+    entry = picked;
+  }
+  // 执行前自动保存所有文件，避免编译旧代码
+  await editorPane?.saveAllFiles();
+  return startTaskEntry(kind, entry, entries.length > 1);
+}
+
+// 编译并运行：依次执行全部编译脚本（逐个等待结束），再依次执行全部运行脚本（无论成败继续）
+async function runBuildThenRun(): Promise<void> {
+  if (!currentProjectPath) {
+    alert('请先打开项目');
+    return;
+  }
+  const builds = await getEffectiveTaskScripts('build');
+  const runs = await getEffectiveTaskScripts('run');
+  if (builds.length === 0 && runs.length === 0) {
+    void settingsPanel?.show('tasks');
+    return;
+  }
+  await editorPane?.saveAllFiles();
+
+  // 编译组：逐个顺序执行，每个等待结束后再启动下一个
+  for (const entry of builds) {
+    const id = await startTaskEntry('build', entry, builds.length > 1);
+    if (id) await waitForTaskFinish(id);
+  }
+  // 运行组：逐个顺序执行，最后一个无需等待
+  for (let i = 0; i < runs.length; i++) {
+    const id = await startTaskEntry('run', runs[i], runs.length > 1);
+    if (id && i < runs.length - 1) await waitForTaskFinish(id);
+  }
+}
+
+// 终端面板显隐切换
+function toggleTerminalPanel(show?: boolean) {
+  const panel = document.getElementById('terminal-panel')!;
+  const resizer = document.getElementById('terminal-resizer')!;
+  const isVisible = !panel.hidden;
+  const shouldShow = show ?? !isVisible;
+
+  if (shouldShow === isVisible) return;
+
+  panel.hidden = !shouldShow;
+  resizer.hidden = !shouldShow;
+  // 同步活动栏终端按钮高亮（无论开关来源：快捷键/菜单/✕ 按钮）
+  document.getElementById('btn-terminal')?.classList.toggle('active', shouldShow);
+
+  // 终端与任务输出面板互斥：打开终端时收起输出面板（同步按钮高亮）
+  if (shouldShow) {
+    taskPanel?.hide();
+    document.getElementById('btn-task-output')?.classList.remove('active');
+  }
+
+  if (shouldShow && !terminalPanel?.hasActiveTerminal()) {
+    terminalPanel?.createNewTerminal(currentProjectPath || undefined);
+  }
+  if (shouldShow) {
+    terminalPanel?.fitActive();
+  }
+}
+
+// 任务输出面板显隐切换（与终端面板互斥，同步活动栏按钮高亮）
+function toggleTaskPanel(show?: boolean) {
+  if (!taskPanel) return;
+  const isVisible = taskPanel.isVisible();
+  const shouldShow = show ?? !isVisible;
+
+  if (shouldShow === isVisible) return;
+
+  if (shouldShow) {
+    // 打开输出面板时收起终端
+    toggleTerminalPanel(false);
+    taskPanel.show();
+  } else {
+    taskPanel.hide();
+  }
+  document.getElementById('btn-task-output')?.classList.toggle('active', shouldShow);
+}
+
+// 编码选择菜单
+function showEncodingMenu(filePath: string, anchor: HTMLElement) {
+  const encodings = ['UTF-8', 'GBK', 'UTF-16 LE', 'UTF-16 BE', 'ISO-8859-1'];
+  const menu = document.createElement('div');
+  menu.className = 'context-menu';
+  menu.style.position = 'fixed';
+
+  const rect = anchor.getBoundingClientRect();
+  menu.style.left = rect.left + 'px';
+  menu.style.top = (rect.top - encodings.length * 30) + 'px';
+
+  for (const enc of encodings) {
+    const item = document.createElement('div');
+    item.className = 'context-menu-item';
+    item.textContent = enc;
+    item.addEventListener('click', async () => {
+      menu.remove();
+      const result = await window.electronAPI.readFileWithEncoding(filePath, enc);
+      if (result.success && result.content !== undefined) {
+        editorPane?.setContent(result.content);
+        document.getElementById('status-encoding')!.textContent = enc;
+        await window.electronAPI.setFileEncoding(filePath, enc);
+      } else {
+        alert(`读取文件失败: ${result.error || '未知错误'}`);
+      }
+    });
+    menu.appendChild(item);
+  }
+
+  document.body.appendChild(menu);
+  setTimeout(() => {
+    const close = (e: MouseEvent) => {
+      if (!menu.contains(e.target)) {
+        menu.remove();
+        document.removeEventListener('mousedown', close);
+      }
+    };
+    document.addEventListener('mousedown', close);
+  }, 0);
 }
 
 // 启动
