@@ -142,7 +142,7 @@ export interface EditorSettings {
 }
 
 // 浅色主题列表：编辑器使用浅色配色时，外壳 UI / 窗口底色需同步切换
-export const LIGHT_THEMES = ['vs-light'];
+export const LIGHT_THEMES = ['vs-light', 'ink-java-light'];
 
 // 判断是否为浅色主题（主进程与渲染进程共用）
 export function isLightTheme(theme: string | null | undefined): boolean {

@@ -20,7 +20,48 @@ import {
 let repoWatcherClose: (() => void) | null = null;
 
 // 当前打开文件的 watcher（外部变更检测）
-const fileWatchers = new Map<string, FSWatcher>();
+interface FileWatch {
+  watcher: FSWatcher | null;
+  timer: NodeJS.Timeout | undefined;
+}
+const fileWatchers = new Map<string, FileWatch>();
+
+// 本进程写盘后的文件指纹（mtimeMs + size）
+const selfWrites = new Map<string, string>();
+
+// Windows 路径大小写不敏感，统一用 lowercase 作键
+function watchKey(filePath: string): string {
+  return filePath.toLowerCase();
+}
+
+function fingerprint(st: { mtimeMs: number; size: number }): string {
+  return `${st.mtimeMs}:${st.size}`;
+}
+
+// 登记自身写入指纹：紧随其后的 watcher 事件应当豁免
+async function recordSelfWrite(filePath: string): Promise<void> {
+  const key = watchKey(filePath);
+  try {
+    selfWrites.set(key, fingerprint(await stat(filePath)));
+  } catch {
+    selfWrites.delete(key);
+  }
+}
+
+// 向渲染进程通报外部变更；命中自身写入指纹时只消费豁免、不通报
+async function notifyFileChanged(filePath: string): Promise<void> {
+  const key = watchKey(filePath);
+  try {
+    const st = await stat(filePath);
+    if (selfWrites.get(key) === fingerprint(st)) {
+      selfWrites.delete(key);
+      return;
+    }
+  } catch {
+    // 文件已被外部删除，仍需通报给打开着它的编辑器
+  }
+  broadcast(MAIN_EVENTS.FILE_CHANGED, filePath);
+}
 
 // 向所有窗口广播事件（单窗口应用）
 function broadcast(channel: string, ...args: unknown[]) {
@@ -66,6 +107,7 @@ export function registerIpcHandlers() {
   ipcMain.handle(IPC_CHANNELS.FILE_SAVE_CONTENT, async (_event, filePath: string, content: string) => {
     try {
       await writeFile(filePath, encodeContent(content, filePath));
+      await recordSelfWrite(filePath);
       // 保存后清除索引缓存，触发重新索引
       clearCache(filePath);
       return { success: true };
@@ -594,19 +636,25 @@ export function registerIpcHandlers() {
 
   // ============ 文件外部变更检测 ============
 
-    // 监听文件外部变更
-    ipcMain.handle(IPC_CHANNELS.FILE_WATCH, async (_event, filePath: string) => {
+  // 监听文件外部变更
+  ipcMain.handle(IPC_CHANNELS.FILE_WATCH, async (_event, filePath: string) => {
     try {
       // 关闭旧的 watcher
-      const old = fileWatchers.get(filePath);
-      if (old) old.close();
+      const key = watchKey(filePath);
+      const old = fileWatchers.get(key);
+      if (old) {
+        clearTimeout(old.timer);
+        old.watcher?.close();
+      }
 
-      const watcher = watch(filePath, { persistent: false }, (eventType) => {
-        if (eventType === 'change') {
-          broadcast(MAIN_EVENTS.FILE_CHANGED, filePath);
-        }
+      // Windows 上一次写入常回报多个 change 事件，防抖合并后再判定
+      const state: FileWatch = { watcher: null, timer: undefined };
+      state.watcher = watch(filePath, { persistent: false }, (eventType) => {
+        if (eventType !== 'change') return;
+        clearTimeout(state.timer);
+        state.timer = setTimeout(() => { void notifyFileChanged(filePath); }, 200);
       });
-      fileWatchers.set(filePath, watcher);
+      fileWatchers.set(key, state);
       return { success: true };
     } catch (error) {
       return { success: false, error: String(error) };
@@ -615,11 +663,14 @@ export function registerIpcHandlers() {
 
   // 取消监听文件
   ipcMain.handle(IPC_CHANNELS.FILE_UNWATCH, async (_event, filePath: string) => {
-    const watcher = fileWatchers.get(filePath);
-    if (watcher) {
-      watcher.close();
-      fileWatchers.delete(filePath);
+    const key = watchKey(filePath);
+    const state = fileWatchers.get(key);
+    if (state) {
+      clearTimeout(state.timer);
+      state.watcher?.close();
+      fileWatchers.delete(key);
     }
+    selfWrites.delete(key);
     return { success: true };
   });
 }

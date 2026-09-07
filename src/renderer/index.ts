@@ -10,9 +10,12 @@ import { registerSqlLanguage } from './services/sql-language';
 import { registerMarkdownLanguage } from './services/markdown-language';
 import { registerJsonLanguage } from './services/json-language';
 import { registerPropertiesLanguage } from './services/properties-language';
+import { registerVueLanguage } from './services/vue-language';
+import { registerEditorThemes } from './services/themes';
 import { MarkdownPreview } from './components/MarkdownPreview';
 import { GitPanel, GitDiffRequest } from './components/GitPanel';
-import { DiffViewer, detectLanguage } from './components/DiffViewer';
+import { DiffViewer } from './components/DiffViewer';
+import { languageIdFromFileName } from './services/language';
 import { TitleBar } from './components/TitleBar';
 import { ReplacePanel } from './components/ReplacePanel';
 import { TerminalPanel } from './components/TerminalPanel';
@@ -153,12 +156,14 @@ let scrollLockTimer: number | undefined;
 
 // 初始化
 async function init() {
-  // 注册增强版语法高亮（必须在创建编辑器之前）
+  // 主题与增强版语法高亮（必须在创建编辑器之前）
+  registerEditorThemes();
   registerJavaLanguage();
   registerSqlLanguage();
   registerMarkdownLanguage();
   registerJsonLanguage();
   registerPropertiesLanguage();
+  registerVueLanguage();
 
   // 加载配置（主题、字体大小）
   let settings: EditorSettings | null = null;
@@ -1029,7 +1034,7 @@ async function showDiff(req: GitDiffRequest) {
     modifiedLabel,
     original: res.diff.original,
     modified: res.diff.modified,
-    language: detectLanguage(name)
+    language: languageIdFromFileName(name)
   });
 }
 

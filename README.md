@@ -1,6 +1,6 @@
 # InkCode
 
-基于 **Electron + Monaco Editor** 的轻量级代码编辑器，面向 Java 项目的日常浏览与编辑场景，提供文件树、符号大纲、全局搜索、Git 集成、内置终端、编译运行任务、JDT 语言服务、GBK/UTF-8 编码自动识别等能力，并内置 SQL / Markdown / JSON / Properties 增强高亮与 Markdown 实时预览。
+基于 **Electron + Monaco Editor** 的轻量级代码编辑器，面向 Java 项目的日常浏览与编辑场景，提供文件树、符号大纲、全局搜索、Git 集成、内置终端、编译运行任务、JDT 语言服务、GBK/UTF-8 编码自动识别等能力，并内置 SQL / Markdown / JSON / Properties / HTML / Vue / SCSS / LESS 增强高亮与 Markdown 实时预览。
 
 ## 功能特性
 
@@ -11,6 +11,9 @@
 - **SQL 增强高亮**：自定义 Monarch 分词器，DDL 关键字 / 约束 / 数据类型 / 表名 / 索引名 / 内置函数 / 常量 差异化着色
 - **JSON 高亮**：轻量 Monarch 文法，键 / 字符串 / 数字 / 常量 / 括号差异化着色
 - **Properties 高亮**：支持 `#`/`!` 注释、键值分隔（`=`/`:`）、反斜杠续行、布尔/数字/占位符高亮
+- **Vue 单文件组件高亮**：自定义 Monarch 文法，标签 / `v-*` 指令 / `:` `@` `#` 缩写 / `{{插值}}` 差异化着色；`<script>` 按 `lang` 交给 typescript 或 javascript、`<style>` 按 `lang` 交给 scss / less / css 的真实文法，闭合处再退回 Vue
+- **HTML / SCSS / LESS 高亮**：启用 Monaco 内置 basic-languages 文法，`<style>` / `<script>` 内嵌块按语言接管，标签、属性、指令均纳入统一主题配色
+- **深浅双主题**：`ink-java-dark` / `ink-java-light` 两套定制配色共享一张 token 样式表（点分层级前缀继承），切换时编辑器、外壳 CSS 变量、自绘标题栏、内置终端与窗口底色五层同步
 - **Markdown 高亮与预览**：语法高亮 + 渲染预览（GFM），纯编辑 / 双栏 / 纯预览三种模式；双栏模式与编辑器共用滚动条双向同步
 - **import 块自动折叠**：打开 Java 文件自动折叠 import 区，方法/类体缩进折叠正常
 - **符号大纲**：解析 Java 文件的类/方法/字段符号，点击跳转到对应行
@@ -72,8 +75,9 @@ src/
     │                       # TerminalPanel / TaskPanel / ScriptPicker / ReferencesPanel
     ├── services/           # monaco（统一导出）、java-language（高亮+折叠）、
     │                       # sql-language / json-language / markdown-language /
-    │                       # properties-language / icons（文件图标）、
-    │                       # lsp-client / command-service
+    │                       # properties-language / vue-language（SFC 块内嵌）、
+    │                       # themes（深浅双主题 token 表）、language（扩展名→语言 id）、
+    │                       # icons（文件图标）、lsp-client / command-service
     └── styles/main.css     # 全局样式（暗色/浅色主题）
 ```
 

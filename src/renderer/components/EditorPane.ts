@@ -1,6 +1,7 @@
 import { monaco } from '../services/monaco';
 import { fileIconSvg } from '../services/icons';
 import { findImportBlock } from '../services/java-language';
+import { languageIdFromFileName } from '../services/language';
 import { ContextMenu } from './ContextMenu';
 
 interface OpenFile {
@@ -40,6 +41,9 @@ export class EditorPane {
   private autoSaveDelay: number = 1000;
   private autoSaveTimer: number | undefined;
 
+  // 正在用磁盘内容程序化替换 model：此期间的 change 事件不是用户编辑
+  private isApplyingExternalChange = false;
+
   constructor(tabBar: HTMLElement, editorContainer: HTMLElement, options?: { theme?: string; fontSize?: number }) {
     this.tabBar = tabBar;
 
@@ -71,6 +75,8 @@ export class EditorPane {
 
     // 监听内容变化（标记未保存）
     this.editor.onDidChangeModelContent(() => {
+      // 外部变更重载时的 setValue 不是用户编辑，标脏会再排自动保存并形成写盘循环
+      if (this.isApplyingExternalChange) return;
       this.markFileDirty();
       // 通知活动文件内容变更（预览侧按需拉取并防抖渲染）
       this.onContentChange?.();
@@ -413,14 +419,6 @@ export class EditorPane {
     }
   }
 
-  // 重新加载当前文件内容（外部变更检测用）
-  async reloadContent(content: string) {
-    const model = this.editor.getModel();
-    if (!model || this.activeFileIndex < 0) return;
-    model.setValue(content);
-    this.markFileClean();
-  }
-
   // 获取当前活动文件路径
   getActiveFilePath(): string | null {
     if (this.activeFileIndex < 0) return null;
@@ -477,13 +475,40 @@ export class EditorPane {
   // 重新加载指定文件内容（外部变更检测用）
   async reloadFile(filePath: string) {
     const file = this.openFiles.find(f => f.path.toLowerCase() === filePath.toLowerCase());
-    if (!file || !file.model) return;
-    const content = await this.onLoadContent?.(filePath);
+    if (!file?.model) return;
+    const content = await this.onLoadContent?.(file.path);
     if (content != null) {
-      file.model.setValue(content);
-      file.dirty = false;
-      this.renderTabs();
+      this.applyExternalContent(file, content);
     }
+  }
+
+  // 用磁盘内容替换 model：不标脏、不触自动保存，并尽量保住光标与滚动位置
+  private applyExternalContent(file: OpenFile, content: string) {
+    const model = file.model;
+    if (!model) return;
+    const isActive = this.editor.getModel() === model;
+    const position = isActive ? this.editor.getPosition() : null;
+    const viewState = isActive ? this.editor.saveViewState() : null;
+
+    this.isApplyingExternalChange = true;
+    try {
+      model.setValue(content);
+    } finally {
+      this.isApplyingExternalChange = false;
+    }
+
+    file.dirty = false;
+    // setValue 把光标压回 (1,1) 并重置滚动；内容变短时存档坐标已越界，还原会异常
+    if (isActive && viewState && position && position.lineNumber <= model.getLineCount()) {
+      this.editor.restoreViewState(viewState);
+      this.editor.setPosition({
+        lineNumber: position.lineNumber,
+        column: Math.min(position.column, model.getLineMaxColumn(position.lineNumber))
+      });
+    }
+    // 预览侧依赖内容变更通知，抑制标记挡掉了正常回调，这里补一次
+    if (isActive) this.onContentChange?.();
+    this.renderTabs();
   }
 
   // 设置当前活动文件内容（编码切换用）
@@ -560,31 +585,6 @@ export class EditorPane {
   }
 
   private getLanguage(fileName: string): string {
-    const ext = fileName.split('.').pop()?.toLowerCase();
-    switch (ext) {
-      case 'java': return 'java';
-      case 'js': return 'javascript';
-      case 'ts': return 'typescript';
-      case 'json': return 'json';
-      case 'xml': return 'xml';
-      case 'html': return 'html';
-      case 'css': return 'css';
-      case 'md': return 'markdown';
-      case 'markdown': return 'markdown';
-      case 'sql': return 'sql';
-      case 'py': return 'python';
-      case 'go': return 'go';
-      case 'bat': return 'bat';
-      case 'cmd': return 'bat';
-      case 'sh': return 'shell';
-      case 'bash': return 'shell';
-      case 'ps1': return 'powershell';
-      case 'yml': return 'yaml';
-      case 'yaml': return 'yaml';
-      case 'properties': return 'properties';
-      case 'ini': return 'ini';
-      case 'conf': return 'ini';
-      default: return 'plaintext';
-    }
+    return languageIdFromFileName(fileName);
   }
 }

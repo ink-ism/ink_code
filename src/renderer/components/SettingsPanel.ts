@@ -4,6 +4,7 @@ import { EditorSettings, TasksConfig, TaskScriptEntry, TaskScriptConfig, Project
 const THEME_OPTIONS = [
   { value: 'ink-java-dark', label: '深色 (Ink Dark+)' },
   { value: 'vs-dark', label: '深色 (VS Dark)' },
+  { value: 'ink-java-light', label: '浅色 (Ink Light+)' },
   { value: 'vs-light', label: '浅色 (VS Light)' },
   { value: 'hc-black', label: '高对比度 (High Contrast)' }
 ];
