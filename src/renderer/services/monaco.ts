@@ -8,6 +8,8 @@
  * - basic-languages：纯 Monarch 高亮，无 worker 依赖
  * java / sql / markdown 使用项目自定义文法，json 见 json-language 轻量注册；
  * properties 见 properties-language 自定义文法（Monaco 无内置）；
+ * vue 见 vue-language 自定义文法（Monaco 无内置，块内嵌 typescript / scss / less / css）；
+ * html / css / scss / less 使用内置 basic-languages Monarch 文法；
  * python / go / bat / shell / powershell / yaml / ini 使用内置 basic-languages Monarch 文法；
  * worker 仍由 vite-plugin-monaco-editor 统一产出，与导入方式解耦。
  */
@@ -18,6 +20,8 @@ import 'monaco-editor/esm/vs/basic-languages/typescript/typescript.contribution.
 import 'monaco-editor/esm/vs/basic-languages/xml/xml.contribution.js';
 import 'monaco-editor/esm/vs/basic-languages/html/html.contribution.js';
 import 'monaco-editor/esm/vs/basic-languages/css/css.contribution.js';
+import 'monaco-editor/esm/vs/basic-languages/scss/scss.contribution.js';
+import 'monaco-editor/esm/vs/basic-languages/less/less.contribution.js';
 import 'monaco-editor/esm/vs/basic-languages/python/python.contribution.js';
 import 'monaco-editor/esm/vs/basic-languages/go/go.contribution.js';
 import 'monaco-editor/esm/vs/basic-languages/bat/bat.contribution.js';

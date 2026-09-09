@@ -9,35 +9,6 @@ export interface DiffViewerRequest {
   language: string;
 }
 
-// 按扩展名推断 Monaco 语言（与 EditorPane 保持一致的常用子集）
-export function detectLanguage(fileName: string): string {
-  const ext = fileName.split('.').pop()?.toLowerCase();
-  switch (ext) {
-    case 'java': return 'java';
-    case 'js': return 'javascript';
-    case 'ts': return 'typescript';
-    case 'json': return 'json';
-    case 'xml': return 'xml';
-    case 'html': return 'html';
-    case 'css': return 'css';
-    case 'md': return 'markdown';
-    case 'markdown': return 'markdown';
-    case 'sql': return 'sql';
-    case 'py': return 'python';
-    case 'go': return 'go';
-    case 'bat': return 'bat';
-    case 'cmd': return 'bat';
-    case 'sh': return 'shell';
-    case 'bash': return 'shell';
-    case 'ps1': return 'powershell';
-    case 'yml': return 'yaml';
-    case 'yaml': return 'yaml';
-    case 'ini': return 'ini';
-    case 'properties': return 'properties';
-    default: return 'plaintext';
-  }
-}
-
 /**
  * Diff 查看弹窗：全屏遮罩 + Monaco diff 编辑器（只读）。
  * 每次打开重建 model，关闭时立即 dispose，避免 TextModel 泄漏。

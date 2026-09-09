@@ -1,12 +1,14 @@
 import { ipcMain, dialog, shell, nativeTheme, BrowserWindow } from 'electron';
-import { readFile, writeFile } from 'fs/promises';
-import { IPC_CHANNELS, MAIN_EVENTS, isLightTheme } from '../common/types';
+import { readFile, writeFile, stat } from 'fs/promises';
+import { watch, FSWatcher } from 'fs';
+import { IPC_CHANNELS, MAIN_EVENTS, isLightTheme, SearchReplaceOptions } from '../common/types';
 import { scanDirectory, scanFullTree } from './file-service';
 import { indexFile, indexProject, clearCache } from './index-service';
-import { loadSettings, saveSettings, loadRecentProjects, loadSession, saveSession } from './config-service';
+import { loadSettings, saveSettings, loadRecentProjects, loadSession, saveSession, loadKeybindings, saveKeybindings, loadTasksConfig, saveTasksConfig } from './config-service';
 import { getMenuModel, invokeMenuAction, applyTitleBarOverlay } from './menu-service';
-import { decodeBuffer, encodeContent } from './encoding';
-import { listAllFiles, searchProject } from './search-service';
+import { decodeBuffer, encodeContent, setEncodingOverride, getEncodingForFile } from './encoding';
+import { listAllFiles, searchProject, replaceInProject } from './search-service';
+import { createFileOrFolder, renameItem, deleteItem, copyItem, cutItem, pasteItem, setClipboard } from './file-ops';
 import {
   getGitStatus, getGitLog, getGitCommitFiles, gitStage, gitUnstage, gitStageAll, gitUnstageAll,
   gitDiscard, gitCleanFile, gitCommit, gitPull, gitPush, gitFetch, gitPushUpstream,
@@ -16,6 +18,50 @@ import {
 
 // 当前仓库的 .git 目录 watcher（外部变更自动刷新）
 let repoWatcherClose: (() => void) | null = null;
+
+// 当前打开文件的 watcher（外部变更检测）
+interface FileWatch {
+  watcher: FSWatcher | null;
+  timer: NodeJS.Timeout | undefined;
+}
+const fileWatchers = new Map<string, FileWatch>();
+
+// 本进程写盘后的文件指纹（mtimeMs + size）
+const selfWrites = new Map<string, string>();
+
+// Windows 路径大小写不敏感，统一用 lowercase 作键
+function watchKey(filePath: string): string {
+  return filePath.toLowerCase();
+}
+
+function fingerprint(st: { mtimeMs: number; size: number }): string {
+  return `${st.mtimeMs}:${st.size}`;
+}
+
+// 登记自身写入指纹：紧随其后的 watcher 事件应当豁免
+async function recordSelfWrite(filePath: string): Promise<void> {
+  const key = watchKey(filePath);
+  try {
+    selfWrites.set(key, fingerprint(await stat(filePath)));
+  } catch {
+    selfWrites.delete(key);
+  }
+}
+
+// 向渲染进程通报外部变更；命中自身写入指纹时只消费豁免、不通报
+async function notifyFileChanged(filePath: string): Promise<void> {
+  const key = watchKey(filePath);
+  try {
+    const st = await stat(filePath);
+    if (selfWrites.get(key) === fingerprint(st)) {
+      selfWrites.delete(key);
+      return;
+    }
+  } catch {
+    // 文件已被外部删除，仍需通报给打开着它的编辑器
+  }
+  broadcast(MAIN_EVENTS.FILE_CHANGED, filePath);
+}
 
 // 向所有窗口广播事件（单窗口应用）
 function broadcast(channel: string, ...args: unknown[]) {
@@ -61,6 +107,7 @@ export function registerIpcHandlers() {
   ipcMain.handle(IPC_CHANNELS.FILE_SAVE_CONTENT, async (_event, filePath: string, content: string) => {
     try {
       await writeFile(filePath, encodeContent(content, filePath));
+      await recordSelfWrite(filePath);
       // 保存后清除索引缓存，触发重新索引
       clearCache(filePath);
       return { success: true };
@@ -425,5 +472,205 @@ export function registerIpcHandlers() {
     } catch (error) {
       return { success: false, error: String((error as Error).message ?? error) };
     }
+  });
+
+  // ============ 文件操作 ============
+
+  // 创建文件或文件夹
+  ipcMain.handle(IPC_CHANNELS.FILE_CREATE, async (_event, parentDir: string, name: string, isFolder?: boolean) => {
+    try {
+      const fullPath = await createFileOrFolder(parentDir, name, isFolder ?? false);
+      return { success: true, path: fullPath };
+    } catch (error) {
+      return { success: false, error: String((error as Error).message ?? error) };
+    }
+  });
+
+  // 重命名
+  ipcMain.handle(IPC_CHANNELS.FILE_RENAME, async (_event, oldPath: string, newName: string) => {
+    try {
+      const newPath = await renameItem(oldPath, newName);
+      return { success: true, path: newPath };
+    } catch (error) {
+      return { success: false, error: String((error as Error).message ?? error) };
+    }
+  });
+
+  // 删除
+  ipcMain.handle(IPC_CHANNELS.FILE_DELETE, async (_event, path: string) => {
+    try {
+      await deleteItem(path);
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: String((error as Error).message ?? error) };
+    }
+  });
+
+  // 复制（设置剪贴板）
+  ipcMain.handle(IPC_CHANNELS.FILE_COPY, async (_event, srcPath: string, _destDir: string) => {
+    try {
+      setClipboard(srcPath, 'copy');
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: String((error as Error).message ?? error) };
+    }
+  });
+
+  // 剪切（设置剪贴板）
+  ipcMain.handle(IPC_CHANNELS.FILE_CUT, async (_event, srcPath: string, _destDir: string) => {
+    try {
+      setClipboard(srcPath, 'cut');
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: String((error as Error).message ?? error) };
+    }
+  });
+
+  // 粘贴
+  ipcMain.handle(IPC_CHANNELS.FILE_PASTE, async (_event, destDir: string) => {
+    try {
+      const result = await pasteItem(destDir);
+      return { success: true, path: result };
+    } catch (error) {
+      return { success: false, error: String((error as Error).message ?? error) };
+    }
+  });
+
+  // ============ 搜索替换 ============
+
+  ipcMain.handle(IPC_CHANNELS.SEARCH_REPLACE, async (_event, root: string, options: SearchReplaceOptions) => {
+    try {
+      const results = await replaceInProject(root, options);
+      return { success: true, results };
+    } catch (error) {
+      return { success: false, error: String((error as Error).message ?? error) };
+    }
+  });
+
+  // ============ 终端 ============
+
+  // 终端相关 handler 在 terminal-service.ts 中注册（延迟加载）
+
+  // ============ LSP ============
+
+  // LSP 相关 handler 在 lsp/connection.ts 中注册（延迟加载）
+
+  // ============ 键盘映射 ============
+
+  ipcMain.handle(IPC_CHANNELS.CONFIG_GET_KEYBINDINGS, async () => {
+    try {
+      return { success: true, keybindings: await loadKeybindings() };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.CONFIG_SAVE_KEYBINDINGS, async (_event, keybindings) => {
+    try {
+      await saveKeybindings(keybindings);
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  });
+
+  // ============ 编译运行任务配置 ============
+
+  // 读取任务配置（系统级 + 项目级）
+  ipcMain.handle(IPC_CHANNELS.CONFIG_GET_TASKS, async () => {
+    try {
+      return { success: true, config: await loadTasksConfig() };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  });
+
+  // 保存任务配置
+  ipcMain.handle(IPC_CHANNELS.CONFIG_SAVE_TASKS, async (_event, config) => {
+    try {
+      await saveTasksConfig(config);
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  });
+
+  // 浏览选择脚本文件（编译/运行脚本路径）
+  ipcMain.handle(IPC_CHANNELS.CONFIG_BROWSE_FILE, async () => {
+    const result = await dialog.showOpenDialog({
+      properties: ['openFile'],
+      filters: [
+        { name: '脚本文件', extensions: ['bat', 'cmd', 'ps1'] },
+        { name: '所有文件', extensions: ['*'] }
+      ]
+    });
+    if (result.canceled) {
+      return null;
+    }
+    return result.filePaths[0];
+  });
+
+  // ============ 编码切换 ============
+
+  // 按指定编码读取文件
+  ipcMain.handle(IPC_CHANNELS.FILE_READ_WITH_ENCODING, async (_event, filePath: string, encoding: string) => {
+    try {
+      setEncodingOverride(filePath, encoding);
+      const buf = await readFile(filePath);
+      const { content } = decodeBuffer(buf, filePath);
+      return { success: true, content, encoding };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  });
+
+  // 设置文件保存编码
+  ipcMain.handle(IPC_CHANNELS.FILE_SET_ENCODING, async (_event, filePath: string, encoding: string) => {
+    try {
+      setEncodingOverride(filePath, encoding);
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  });
+
+  // ============ 文件外部变更检测 ============
+
+  // 监听文件外部变更
+  ipcMain.handle(IPC_CHANNELS.FILE_WATCH, async (_event, filePath: string) => {
+    try {
+      // 关闭旧的 watcher
+      const key = watchKey(filePath);
+      const old = fileWatchers.get(key);
+      if (old) {
+        clearTimeout(old.timer);
+        old.watcher?.close();
+      }
+
+      // Windows 上一次写入常回报多个 change 事件，防抖合并后再判定
+      const state: FileWatch = { watcher: null, timer: undefined };
+      state.watcher = watch(filePath, { persistent: false }, (eventType) => {
+        if (eventType !== 'change') return;
+        clearTimeout(state.timer);
+        state.timer = setTimeout(() => { void notifyFileChanged(filePath); }, 200);
+      });
+      fileWatchers.set(key, state);
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  });
+
+  // 取消监听文件
+  ipcMain.handle(IPC_CHANNELS.FILE_UNWATCH, async (_event, filePath: string) => {
+    const key = watchKey(filePath);
+    const state = fileWatchers.get(key);
+    if (state) {
+      clearTimeout(state.timer);
+      state.watcher?.close();
+      fileWatchers.delete(key);
+    }
+    selfWrites.delete(key);
+    return { success: true };
   });
 }

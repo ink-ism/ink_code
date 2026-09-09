@@ -43,7 +43,46 @@ const IPC_CHANNELS = {
   GIT_CLEAN_FILE: 'git:clean-file',
   GIT_WATCH: 'git:watch',
   MENU_GET_TEMPLATE: 'menu:get-template',
-  MENU_INVOKE: 'menu:invoke'
+  MENU_INVOKE: 'menu:invoke',
+  // 文件操作
+  FILE_CREATE: 'file:create',
+  FILE_RENAME: 'file:rename',
+  FILE_DELETE: 'file:delete',
+  FILE_COPY: 'file:copy',
+  FILE_CUT: 'file:cut',
+  FILE_PASTE: 'file:paste',
+  // 搜索替换
+  SEARCH_REPLACE: 'search:replace',
+  // 终端
+  TERMINAL_CREATE: 'terminal:create',
+  TERMINAL_WRITE: 'terminal:write',
+  TERMINAL_RESIZE: 'terminal:resize',
+  TERMINAL_DESTROY: 'terminal:destroy',
+  // LSP
+  LSP_DEFINITION: 'lsp:definition',
+  LSP_REFERENCES: 'lsp:references',
+  LSP_HOVER: 'lsp:hover',
+  LSP_FORMAT: 'lsp:format',
+  LSP_DID_OPEN: 'lsp:did-open',
+  LSP_DID_CHANGE: 'lsp:did-change',
+  LSP_DID_CLOSE: 'lsp:did-close',
+  LSP_STATUS: 'lsp:status',
+  LSP_START: 'lsp:start',
+  // 文件监听
+  FILE_WATCH: 'file:watch-file',
+  FILE_UNWATCH: 'file:unwatch-file',
+  // 键盘映射
+  CONFIG_GET_KEYBINDINGS: 'config:get-keybindings',
+  CONFIG_SAVE_KEYBINDINGS: 'config:save-keybindings',
+  // 编译运行任务
+  CONFIG_GET_TASKS: 'config:get-tasks',
+  CONFIG_SAVE_TASKS: 'config:save-tasks',
+  CONFIG_BROWSE_FILE: 'config:browse-file',
+  TASK_RUN: 'task:run',
+  TASK_STOP: 'task:stop',
+  // 编码切换
+  FILE_READ_WITH_ENCODING: 'file:read-with-encoding',
+  FILE_SET_ENCODING: 'file:set-encoding'
 } as const;
 
 const MAIN_EVENTS = {
@@ -51,7 +90,13 @@ const MAIN_EVENTS = {
   OPEN_SETTINGS: 'ui:open-settings',
   MENU_UPDATED: 'menu:updated',
   GIT_PROGRESS: 'git:progress',
-  GIT_REPO_CHANGED: 'git:repo-changed'
+  GIT_REPO_CHANGED: 'git:repo-changed',
+  FILE_CHANGED: 'file:changed',
+  TERMINAL_DATA: 'terminal:data',
+  LSP_STATUS_CHANGED: 'lsp:status-changed',
+  MENU_ACTION: 'menu:action',
+  TASK_OUTPUT: 'task:output',
+  TASK_FINISHED: 'task:finished'
 } as const;
 
 // 暴露安全的 API 给渲染进程
@@ -142,5 +187,75 @@ contextBridge.exposeInMainWorld('electronAPI', {
   menuInvoke: (id: string) => ipcRenderer.invoke(IPC_CHANNELS.MENU_INVOKE, id),
   onMenuUpdated: (callback: () => void) => {
     ipcRenderer.on(MAIN_EVENTS.MENU_UPDATED, () => callback());
+  },
+
+  // 文件操作
+  createFile: (parentDir: string, name: string) => ipcRenderer.invoke(IPC_CHANNELS.FILE_CREATE, parentDir, name),
+  createFolder: (parentDir: string, name: string) => ipcRenderer.invoke(IPC_CHANNELS.FILE_CREATE, parentDir, name, true),
+  renameItem: (oldPath: string, newName: string) => ipcRenderer.invoke(IPC_CHANNELS.FILE_RENAME, oldPath, newName),
+  deleteItem: (path: string) => ipcRenderer.invoke(IPC_CHANNELS.FILE_DELETE, path),
+  copyItem: (srcPath: string, destDir: string) => ipcRenderer.invoke(IPC_CHANNELS.FILE_COPY, srcPath, destDir),
+  cutItem: (srcPath: string, destDir: string) => ipcRenderer.invoke(IPC_CHANNELS.FILE_CUT, srcPath, destDir),
+  pasteItem: (destDir: string) => ipcRenderer.invoke(IPC_CHANNELS.FILE_PASTE, destDir),
+
+  // 搜索替换
+  searchReplace: (root: string, options: unknown) => ipcRenderer.invoke(IPC_CHANNELS.SEARCH_REPLACE, root, options),
+
+  // 终端
+  terminalCreate: (options: unknown) => ipcRenderer.invoke(IPC_CHANNELS.TERMINAL_CREATE, options),
+  terminalWrite: (id: string, data: string) => ipcRenderer.invoke(IPC_CHANNELS.TERMINAL_WRITE, id, data),
+  terminalResize: (id: string, cols: number, rows: number) => ipcRenderer.invoke(IPC_CHANNELS.TERMINAL_RESIZE, id, cols, rows),
+  terminalDestroy: (id: string) => ipcRenderer.invoke(IPC_CHANNELS.TERMINAL_DESTROY, id),
+  onTerminalData: (callback: (id: string, data: string) => void) => {
+    ipcRenderer.on(MAIN_EVENTS.TERMINAL_DATA, (_event, id: string, data: string) => callback(id, data));
+  },
+
+  // LSP
+  lspDefinition: (uri: string, line: number, character: number) => ipcRenderer.invoke(IPC_CHANNELS.LSP_DEFINITION, uri, line, character),
+  lspReferences: (uri: string, line: number, character: number) => ipcRenderer.invoke(IPC_CHANNELS.LSP_REFERENCES, uri, line, character),
+  lspHover: (uri: string, line: number, character: number) => ipcRenderer.invoke(IPC_CHANNELS.LSP_HOVER, uri, line, character),
+  lspFormat: (uri: string) => ipcRenderer.invoke(IPC_CHANNELS.LSP_FORMAT, uri),
+  lspDidOpen: (uri: string, languageId: string, version: number, content: string) => ipcRenderer.invoke(IPC_CHANNELS.LSP_DID_OPEN, uri, languageId, version, content),
+  lspDidChange: (uri: string, version: number, content: string) => ipcRenderer.invoke(IPC_CHANNELS.LSP_DID_CHANGE, uri, version, content),
+  lspDidClose: (uri: string) => ipcRenderer.invoke(IPC_CHANNELS.LSP_DID_CLOSE, uri),
+  lspStatus: () => ipcRenderer.invoke(IPC_CHANNELS.LSP_STATUS),
+  lspStart: (projectPath: string) => ipcRenderer.invoke(IPC_CHANNELS.LSP_START, projectPath),
+  onLspStatusChanged: (callback: (status: unknown) => void) => {
+    ipcRenderer.on(MAIN_EVENTS.LSP_STATUS_CHANGED, (_event, status: unknown) => callback(status));
+  },
+
+  // 键盘映射
+  getKeybindings: () => ipcRenderer.invoke(IPC_CHANNELS.CONFIG_GET_KEYBINDINGS),
+  saveKeybindings: (keybindings: unknown) => ipcRenderer.invoke(IPC_CHANNELS.CONFIG_SAVE_KEYBINDINGS, keybindings),
+
+  // 编译运行任务
+  getTasksConfig: () => ipcRenderer.invoke(IPC_CHANNELS.CONFIG_GET_TASKS),
+  saveTasksConfig: (config: unknown) => ipcRenderer.invoke(IPC_CHANNELS.CONFIG_SAVE_TASKS, config),
+  browseFile: () => ipcRenderer.invoke(IPC_CHANNELS.CONFIG_BROWSE_FILE),
+  taskRun: (options: unknown) => ipcRenderer.invoke(IPC_CHANNELS.TASK_RUN, options),
+  taskStop: (taskId: string) => ipcRenderer.invoke(IPC_CHANNELS.TASK_STOP, taskId),
+  onTaskOutput: (callback: (taskId: string, text: string) => void) => {
+    ipcRenderer.on(MAIN_EVENTS.TASK_OUTPUT, (_event, taskId: string, text: string) => callback(taskId, text));
+  },
+  onTaskFinished: (callback: (info: unknown) => void) => {
+    ipcRenderer.on(MAIN_EVENTS.TASK_FINISHED, (_event, info: unknown) => callback(info));
+  },
+
+  // 编码切换
+  readFileWithEncoding: (filePath: string, encoding: string) => ipcRenderer.invoke(IPC_CHANNELS.FILE_READ_WITH_ENCODING, filePath, encoding),
+  setFileEncoding: (filePath: string, encoding: string) => ipcRenderer.invoke(IPC_CHANNELS.FILE_SET_ENCODING, filePath, encoding),
+
+  // 事件监听
+  onFileChanged: (callback: (filePath: string) => void) => {
+    ipcRenderer.on(MAIN_EVENTS.FILE_CHANGED, (_event, filePath: string) => callback(filePath));
+  },
+
+  // 文件外部变更监听
+  watchFile: (filePath: string) => ipcRenderer.invoke(IPC_CHANNELS.FILE_WATCH, filePath),
+  unwatchFile: (filePath: string) => ipcRenderer.invoke(IPC_CHANNELS.FILE_UNWATCH, filePath),
+
+  // 菜单动作（新建文件/文件夹/终端切换等）
+  onMenuAction: (callback: (action: string) => void) => {
+    ipcRenderer.on(MAIN_EVENTS.MENU_ACTION, (_event, action: string) => callback(action));
   }
 });

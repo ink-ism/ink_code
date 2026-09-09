@@ -36,3 +36,17 @@ export function encodeContent(content: string, filePath?: string): Buffer {
   }
   return Buffer.from(content, 'utf-8');
 }
+
+/**
+ * 设置文件编码覆盖（用于编码切换）
+ */
+export function setEncodingOverride(filePath: string, encoding: string): void {
+  encodingCache.set(filePath, encoding.toUpperCase());
+}
+
+/**
+ * 获取文件当前记录的编码
+ */
+export function getEncodingForFile(filePath: string): string {
+  return encodingCache.get(filePath) || 'UTF-8';
+}
