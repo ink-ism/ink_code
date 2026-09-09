@@ -87,7 +87,15 @@
       <div id="main-area-row">
       <!-- 侧边栏：资源管理器视图 与 Git 视图互斥切换 -->
       <div id="sidebar">
-        <div class="panel-header" id="project-name">资源管理器</div>
+        <div class="panel-header project-header">
+          <span id="project-name">资源管理器</span>
+          <span class="git-header-spacer"></span>
+          <button class="git-icon-btn" id="btn-refresh-project" title="刷新项目目录 (Ctrl+Shift+R)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/>
+            </svg>
+          </button>
+        </div>
         <div id="explorer-view">
           <div id="file-tree-container">
             <div id="file-tree"></div>

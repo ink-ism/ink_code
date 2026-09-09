@@ -210,6 +210,7 @@ const DEFAULT_KEYBINDINGS: Keybinding[] = [
   { command: 'file.saveAll', key: 'ctrl+shift+s' },
   { command: 'file.openProject', key: 'ctrl+o' },
   { command: 'file.quickOpen', key: 'ctrl+p' },
+  { command: 'project.refresh', key: 'ctrl+shift+r' },
   { command: 'edit.undo', key: 'ctrl+z' },
   { command: 'edit.redo', key: 'ctrl+y' },
   { command: 'search.find', key: 'ctrl+f' },

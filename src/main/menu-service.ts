@@ -137,6 +137,10 @@ export async function createMenu(): Promise<void> {
     const win = getWin();
     if (win) win.webContents.send(MAIN_EVENTS.MENU_ACTION, 'search-replace');
   };
+  menuActions['refresh-project'] = () => {
+    const win = getWin();
+    if (win) win.webContents.send(MAIN_EVENTS.MENU_ACTION, 'refresh-project');
+  };
   // 编译运行任务（交由渲染进程执行，主进程只转发）
   for (const action of ['task-build', 'task-run', 'task-build-run', 'task-settings']) {
     menuActions[action] = () => {
@@ -174,6 +178,7 @@ export async function createMenu(): Promise<void> {
       label: 'Project',
       submenu: [
         { id: 'open-project', label: '打开项目', accelerator: 'CmdOrCtrl+O' },
+        { id: 'refresh-project', label: '刷新目录', accelerator: 'CmdOrCtrl+Shift+R' },
         { separator: true },
         { label: '最近项目', submenu: recentSubmenu }
       ]

@@ -255,13 +255,24 @@ body.resizing-y {
   border: none;
 }
 
+/* 侧边栏头部：项目名 + 刷新按钮 */
+.project-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 14px 8px;
+}
+
 /* 项目名（侧边栏顶部，更醒目） */
 #project-name {
   font-size: 12px;
   letter-spacing: 0.02em;
   text-transform: none;
   color: var(--text-bright);
-  padding: 12px 14px 8px;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 /* ============ 文件树 ============ */
@@ -1538,6 +1549,16 @@ body.resizing-y {
 .git-icon-btn svg {
   width: 13px;
   height: 13px;
+}
+
+.git-icon-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.git-icon-btn:disabled:hover {
+  color: var(--text-muted);
+  background-color: transparent;
 }
 
 /* 空状态提示 */

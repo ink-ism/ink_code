@@ -18,6 +18,8 @@ export const COMMANDS: CommandDef[] = [
   { id: 'file.saveAll', label: '文件: 全部保存', defaultKey: 'ctrl+shift+s' },
   { id: 'file.newFile', label: '文件: 新建文件', defaultKey: 'ctrl+n' },
   { id: 'file.newFolder', label: '文件: 新建文件夹', defaultKey: '' },
+  // 快捷键由原生菜单 accelerator 持有，此处仅登记命令供设置面板展示/改名
+  { id: 'project.refresh', label: '项目: 刷新目录', defaultKey: 'ctrl+shift+r' },
   { id: 'edit.undo', label: '编辑: 撤销', defaultKey: 'ctrl+z' },
   { id: 'edit.redo', label: '编辑: 重做', defaultKey: 'ctrl+y' },
   { id: 'view.toggleTerminal', label: '视图: 切换终端', defaultKey: 'ctrl+`' },

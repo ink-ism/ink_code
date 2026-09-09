@@ -148,6 +148,14 @@ let scriptPicker: ScriptPicker | null = null;
 let referencesPanel: ReferencesPanel | null = null;
 let currentSettings: EditorSettings | null = null;
 let watchedFilePath: string | null = null;
+// 项目刷新执行锁：连点按钮、焦点刷新与手动刷新交叠时只跑一轮扫盘
+let projectRefreshing = false;
+let pendingRefresh = false;
+let lastRefreshAt = 0;
+// 项目加载完成时刻（0 = 加载中）：加载后紧接着的窗口 focus 不应再刷一遍
+let projectReadyAt = 0;
+let fileListTask: { root: string; promise: Promise<boolean> } | null = null;
+let reindexTask: { root: string; promise: Promise<boolean> } | null = null;
 // 大文件保护：超过该大小不创建 TextModel，避免单文件内存爆张
 const MAX_OPEN_FILE_SIZE = 5 * 1024 * 1024;
 // 滚动同步锁：防止编辑器 <-> 预览互相触发形成回环
@@ -187,6 +195,10 @@ async function init() {
   fileTree = new FileTree(document.getElementById('file-tree')!);
   fileTree.onFileClick = async (filePath: string) => {
     await openFile(filePath);
+  };
+  // 树变化后同步 Ctrl+P 列表（此前该回调从未接线，树与快速打开长期不一致）
+  fileTree.onTreeChanged = () => {
+    if (currentProjectPath) void refreshFileList(currentProjectPath);
   };
 
   // 初始化编辑器（应用配置中的主题和字体）
@@ -304,6 +316,9 @@ async function init() {
   );
   document.getElementById('btn-git-refresh')!.addEventListener('click', () => {
     gitPanel?.refresh();
+  });
+  document.getElementById('btn-refresh-project')!.addEventListener('click', () => {
+    void refreshProject('manual');
   });
 
   // Diff 查看弹窗（惰性创建 Monaco diff 编辑器）
@@ -525,10 +540,13 @@ async function init() {
   window.electronAPI.onMenuAction(async (action) => {
     switch (action) {
       case 'new-file':
-        fileTree?.startInlineCreate(currentProjectPath);
+        fileTree?.startInlineCreate(currentProjectPath, false);
         break;
       case 'new-folder':
         fileTree?.startInlineCreate(currentProjectPath, true);
+        break;
+      case 'refresh-project':
+        await refreshProject('manual');
         break;
       case 'save-all':
         editorPane?.saveAllFiles();
@@ -599,6 +617,23 @@ async function init() {
   } catch (error) {
     console.error('恢复会话失败:', error);
   }
+
+  // 窗口重新聚焦时自动刷新目录（外部工具新增/删除文件后无需手动点刷新）。
+  // 用 window 的 blur/focus 而非 visibilitychange：后者覆盖不到"切到另一个应用"
+  let sawBlur = false;
+  let focusRefreshTimer: number | undefined;
+  window.addEventListener('blur', () => {
+    sawBlur = true;
+  });
+  window.addEventListener('focus', () => {
+    if (!sawBlur) return;
+    sawBlur = false;
+    // 400ms 拖尾：Win+D、点任务栏切回会连着抖动 focus
+    window.clearTimeout(focusRefreshTimer);
+    focusRefreshTimer = window.setTimeout(() => {
+      void refreshProject('focus');
+    }, 400);
+  });
 }
 
 // 侧边栏拖拽拉宽
@@ -776,9 +811,94 @@ function updateBreadcrumb(filePath: string | null) {
   });
 }
 
+// 刷新 Ctrl+P 快速打开列表（按项目去重；失败只记录，由调用方汇总）
+function refreshFileList(root: string): Promise<boolean> {
+  // 按 root 去重：切换项目时不能复用上一个项目未结束的任务
+  if (fileListTask && fileListTask.root === root) return fileListTask.promise;
+  const task = (async () => {
+    try {
+      const result = await window.electronAPI.listAllFiles(root);
+      if (!result.success) throw new Error(result.error ?? '未知错误');
+      // 迟到的旧结果不能覆盖新项目的列表
+      if (currentProjectPath === root) quickOpen?.setFiles(result.files ?? []);
+      return true;
+    } catch (error) {
+      console.error('刷新文件列表失败:', error);
+      return false;
+    }
+  })();
+  fileListTask = { root, promise: task };
+  task.finally(() => {
+    if (fileListTask?.promise === task) fileListTask = null;
+  });
+  return task;
+}
+
+// 重建符号索引（按项目去重）。主进程会清空缓存并逐文件同步读盘，耗时最长，刷新流程放最后
+function reindexProject(root: string): Promise<boolean> {
+  if (reindexTask && reindexTask.root === root) return reindexTask.promise;
+  const task = (async () => {
+    try {
+      const result = await window.electronAPI.indexProject(root);
+      if (!result.success) throw new Error(result.error ?? '未知错误');
+      if (currentProjectPath === root) {
+        console.log(`项目索引完成，共 ${result.count ?? 0} 个文件`);
+      }
+      return true;
+    } catch (error) {
+      console.error('重建符号索引失败:', error);
+      return false;
+    }
+  })();
+  reindexTask = { root, promise: task };
+  task.finally(() => {
+    if (reindexTask?.promise === task) reindexTask = null;
+  });
+  return task;
+}
+
+// 项目刷新编排：文件树（保留展开/选中/滚动）+ Ctrl+P 列表 + 符号索引
+async function refreshProject(reason: 'manual' | 'focus'): Promise<void> {
+  const root = currentProjectPath;
+  if (!root || !fileTree) return;
+  // 内联命名进行中：刷新会整棵重建 DOM，正在输入的框会凭空消失
+  if (fileTree.isEditing()) return;
+  if (reason === 'focus') {
+    // 加载中或刚加载完的静默窗口内不重复刷；焦点刷新按 5s 节流
+    if (!projectReadyAt || Date.now() - projectReadyAt < 3000) return;
+    if (Date.now() - lastRefreshAt < 5000) return;
+  }
+  if (projectRefreshing) {
+    // 刷新中不并发扫盘，收尾时补跑一次，保证最后一次意图不丢
+    pendingRefresh = true;
+    return;
+  }
+  projectRefreshing = true;
+  const btn = document.getElementById('btn-refresh-project') as HTMLButtonElement | null;
+  if (btn) btn.disabled = true;
+  const failures: string[] = [];
+  try {
+    if (!(await fileTree.refreshTree()) && currentProjectPath === root) failures.push('文件树');
+    if (currentProjectPath !== root) return;
+    if (!(await refreshFileList(root)) && currentProjectPath === root) failures.push('文件列表');
+    if (currentProjectPath !== root) return;
+    if (!(await reindexProject(root)) && currentProjectPath === root) failures.push('符号索引');
+  } finally {
+    projectRefreshing = false;
+    if (btn) btn.disabled = false;
+    lastRefreshAt = Date.now();
+    if (failures.length > 0) alert(`刷新失败：${failures.join('、')}`);
+    const shouldRerun = pendingRefresh && currentProjectPath === root;
+    pendingRefresh = false;
+    if (shouldRerun) void refreshProject('manual');
+  }
+}
+
 // 加载项目
 async function loadProject(dirPath: string, restore?: SessionState) {
   console.log('[loadProject] 加载项目:', dirPath);
+  // 0 兼作"正在加载"哨兵：此期间 fileTree.root 可能还是上一个项目或尚未就绪
+  projectReadyAt = 0;
 
   currentProjectPath = dirPath;
   // 同步项目路径给设置面板（编译运行的项目级配置需要）
@@ -810,19 +930,9 @@ async function loadProject(dirPath: string, restore?: SessionState) {
     const tree = await window.electronAPI.scanTree(dirPath);
     fileTree?.setTree(tree);
 
-    // 文件列表（快速打开用）
-    window.electronAPI.listAllFiles(dirPath).then(result => {
-      if (result.success && result.files) {
-        quickOpen?.setFiles(result.files);
-      }
-    });
-
-    // 后台索引项目（主进程侧缓存，仅回传计数）
-    window.electronAPI.indexProject(dirPath).then(result => {
-      if (result.success) {
-        console.log(`项目索引完成，共 ${result.count ?? 0} 个文件`);
-      }
-    });
+    // 快速打开列表 + 后台符号索引（主进程侧缓存，仅回传计数）
+    void refreshFileList(dirPath);
+    void reindexProject(dirPath);
 
     // 恢复上次打开的 tab：仅活动文件立即加载，其余延迟 tab 点击时再加载（降低启动内存）
     if (restore && restore.openFiles.length > 0) {
@@ -838,6 +948,9 @@ async function loadProject(dirPath: string, restore?: SessionState) {
     saveSessionDebounced();
   } catch (error) {
     console.error('[loadProject] 错误:', error);
+  } finally {
+    // 解除加载中哨兵，并开启静默窗口：恢复会话后紧跟的 focus 不再刷一遍
+    projectReadyAt = Date.now();
   }
 }
 
